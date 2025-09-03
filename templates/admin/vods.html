@@ -123,7 +123,8 @@
                 class="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M20.618 5.984A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.623 0-1.269-.254-2.49-.682-3.65z"></path>
+                        d="M20.618 5.984A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.623 0-1.269-.254-2.49-.682-3.65z">
+                    </path>
                 </svg>
                 批量删除播放源
             </button>
@@ -139,6 +140,15 @@
                 </span>
             </div>
             <div class="flex items-center space-x-3">
+                <button onclick="batchSetVip()"
+                    class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z">
+                        </path>
+                    </svg>
+                    批量设置VIP
+                </button>
                 <button onclick="batchDelete()"
                     class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -175,6 +185,8 @@
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">发布时间
                         </th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">地区/年份
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">所需VIP
                         </th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作
                         </th>
@@ -387,13 +399,16 @@
             <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-orange-100">
                 <svg class="h-6 w-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M20.618 5.984A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.623 0-1.269-.254-2.49-.682-3.65z"></path>
+                        d="M20.618 5.984A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.623 0-1.269-.254-2.49-.682-3.65z">
+                    </path>
                 </svg>
             </div>
             <h3 class="text-lg font-medium text-gray-900 mt-2">批量删除播放源</h3>
             <div class="mt-2 px-7 py-3">
                 <label for="deleteSourceName" class="block text-sm font-medium text-gray-700 mb-2">请输入要删除的播放源名称：</label>
-                <input type="text" id="deleteSourceName" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500" placeholder="播放源名称">
+                <input type="text" id="deleteSourceName"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    placeholder="播放源名称">
             </div>
             <div class="flex justify-center space-x-3 mt-4">
                 <button onclick="closeDeleteSourceModal()"
@@ -651,6 +666,11 @@
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     ${vod.vod_area || ''} / ${vod.vod_year || ''}
                 </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getVipClass(vod.need_vip)}">
+                        ${getVipText(vod.need_vip)}
+                    </span>
+                </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <button onclick="editVod('${vodId}')" class="text-blue-600 hover:text-blue-900 mr-3">编辑</button>
                     <button onclick="confirmDelete('${vodId}')" class="text-red-600 hover:text-red-900">删除</button>
@@ -680,6 +700,29 @@
             case 1: return 'bg-green-100 text-green-800';
             case 0: return 'bg-yellow-100 text-yellow-800';
             case 2: return 'bg-red-100 text-red-800';
+            default: return 'bg-gray-100 text-gray-800';
+        }
+    }
+
+    // 获取VIP文本
+    function getVipText(needVip) {
+        if (!needVip || needVip === 0) {
+            return '公开';
+        }
+        return `VIP${needVip}`;
+    }
+
+    // 获取VIP样式类
+    function getVipClass(needVip) {
+        if (!needVip || needVip === 0) {
+            return 'bg-gray-100 text-gray-800';
+        }
+        switch (needVip) {
+            case 1: return 'bg-blue-100 text-blue-800';
+            case 2: return 'bg-purple-100 text-purple-800';
+            case 3: return 'bg-pink-100 text-pink-800';
+            case 4: return 'bg-indigo-100 text-indigo-800';
+            case 5: return 'bg-yellow-100 text-yellow-800';
             default: return 'bg-gray-100 text-gray-800';
         }
     }
@@ -1122,23 +1165,23 @@
             },
             body: JSON.stringify({ source_name: sourceName })
         })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                batchDeleteTaskId = data.task_id;
-                showToast('批量删除任务已启动，开始监控进度...', 'success');
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    batchDeleteTaskId = data.task_id;
+                    showToast('批量删除任务已启动，开始监控进度...', 'success');
 
-                // 显示进度模态框或提示用户任务已开始
-                document.getElementById('deleteSourceModal').classList.add('hidden');
-                startProgressMonitoring();
-            } else {
-                showToast('删除失败: ' + (data.message || '未知错误'), 'error');
-            }
-        })
-        .catch(error => {
-            console.error('Error starting batch delete:', error);
-            showToast('启动删除任务失败，请检查网络连接', 'error');
-        });
+                    // 显示进度模态框或提示用户任务已开始
+                    document.getElementById('deleteSourceModal').classList.add('hidden');
+                    startProgressMonitoring();
+                } else {
+                    showToast('删除失败: ' + (data.message || '未知错误'), 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error starting batch delete:', error);
+                showToast('启动删除任务失败，请检查网络连接', 'error');
+            });
     }
 
     // 开始监控批量删除任务进度
@@ -1215,19 +1258,135 @@
         fetch(`/api/admin/batch-delete/stop/${batchDeleteTaskId}`, {
             method: 'POST'
         })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showToast('正在停止删除任务...', 'info');
-                // 不立即清除interval，等待下次轮询时自然停止
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('正在停止删除任务...', 'info');
+                    // 不立即清除interval，等待下次轮询时自然停止
+                } else {
+                    showToast('停止任务失败: ' + (data.message || '未知错误'), 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error stopping task:', error);
+                showToast('停止任务时发生网络错误', 'error');
+            });
+    }
+
+    // 批量设置VIP功能
+    function batchSetVip() {
+        const selectedVods = getSelectedVods();
+        if (selectedVods.length === 0) {
+            showToast('请先选择要设置的视频', 'warning');
+            return;
+        }
+
+        // 先移除已存在的所有VIP模态框
+        const existingModals = document.querySelectorAll('.fixed.inset-0.bg-black');
+        existingModals.forEach(modal => modal.remove());
+
+        // 创建VIP设置弹窗
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        modal.innerHTML = `
+        <div class="bg-white rounded-xl p-8 max-w-md mx-4 transform transition-all duration-300 scale-100">
+            <div class="text-center mb-6">
+                <div class="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z">
+                        </path>
+                    </svg>
+                </div>
+                <h3 class="text-xl font-bold text-gray-900 mb-2">批量设置VIP内容</h3>
+                <p class="text-gray-600">已选择 ${selectedVods.length} 个视频</p>
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">所需VIP等级</label>
+                    <select id="vipLevel" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                        <option value="0">免费内容</option>
+                        <option value="1">VIP 1</option>
+                        <option value="2">VIP 2</option>
+                        <option value="3">VIP 3</option>
+                        <option value="4">VIP 4</option>
+                        <option value="5">VIP 5</option>
+                    </select>
+                </div>
+                
+                <div class="flex gap-3">
+                    <button onclick="executeBatchSetVip()" 
+                            class="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200">
+                        确认设置
+                    </button>
+                    <button onclick="closeBatchSetVipModal()" 
+                            class="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-700 px-6 py-3 rounded-lg font-medium transition-colors duration-200">
+                        取消
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+        document.body.appendChild(modal);
+
+        // 模态框已直接设置为正确大小，无需动画
+
+        // 保存选中的视频ID到全局变量
+        window.selectedVodsForVip = selectedVods;
+    }
+
+    // 关闭批量设置VIP弹窗
+    function closeBatchSetVipModal() {
+        const modals = document.querySelectorAll('.fixed.inset-0.bg-black');
+        modals.forEach(modal => modal.remove());
+        window.selectedVodsForVip = [];
+    }
+
+    // 执行批量设置VIP
+    async function executeBatchSetVip() {
+        const vipLevel = document.getElementById('vipLevel').value;
+        const selectedVods = window.selectedVodsForVip;
+        console.log(selectedVods);
+
+        if (!selectedVods || selectedVods.length === 0) {
+            showToast('请先选择要设置的视频', 'warning');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/admin/vods/batch-set-vip', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    vod_ids: selectedVods,
+                    need_vip: parseInt(vipLevel)
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showToast(result.message, 'success');
+                closeBatchSetVipModal();
+                clearSelection();
+                loadVods(); // 重新加载视频列表
             } else {
-                showToast('停止任务失败: ' + (data.message || '未知错误'), 'error');
+                showToast(result.message, 'error');
             }
-        })
-        .catch(error => {
-            console.error('Error stopping task:', error);
-            showToast('停止任务时发生网络错误', 'error');
-        });
+        } catch (error) {
+            console.error('批量设置VIP失败:', error);
+            showToast('网络错误，请稍后重试', 'error');
+        }
+    }
+
+    // 获取选中的视频ID
+    function getSelectedVods() {
+        const checkboxes = document.querySelectorAll('.vod-checkbox:checked');
+        return Array.from(checkboxes).map(cb => cb.getAttribute('data-vod-id'));
     }
 </script>
 {% endblock %}

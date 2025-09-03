@@ -40,6 +40,8 @@ pub struct Vod {
     pub vod_hits_month: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vod_score: Option<String>,
+    #[serde(default)]
+    pub need_vip: i32, // 0=no, 1=vip level 1, 2=vip level2, 3=vip level3
     // In MongoDB, this is better represented as a nested structure
     pub vod_play_urls: Vec<PlaySource>,
 }
@@ -213,6 +215,110 @@ pub struct CollectTask {
     pub task_success: i32,    // Success count
     pub task_failed: i32,     // Failed count
     pub task_log: String,     // Task log
+    pub created_at: DateTime,
+    pub updated_at: DateTime,
+}
+
+// Media type enum
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum MediaType {
+    Vod,   // Video
+    Image, // Image gallery
+    Audio, // Audio collection
+}
+
+// User watching history model (supports all media types)
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UserHistory {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub user_id: ObjectId,            // User ID
+    pub media_type: MediaType,        // Media type (Vod, Image, Audio)
+    pub media_id: ObjectId,           // Media ID (vod_id, image_id, or audio_id)
+    pub media_name: String,           // Media name
+    pub media_url: String,            // Media URL (play_url for vod, view_url for image/audio)
+    pub poster: String,               // Poster URL
+    pub episode_name: Option<String>, // Episode name (for vod only)
+    pub current_time: Option<i64>,    // Current playback time in seconds (for vod only)
+    pub watch_time: Option<String>,   // Formatted watch time (for vod only)
+    pub timestamp: i64,               // Unix timestamp when record was created
+    pub created_at: DateTime,
+    pub updated_at: DateTime,
+}
+
+// User favorites/collections model (supports all media types)
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UserFavorite {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub user_id: ObjectId,        // User ID
+    pub media_type: MediaType,    // Media type (Vod, Image, Audio)
+    pub media_id: ObjectId,       // Media ID (vod_id, image_id, or audio_id)
+    pub media_name: String,       // Media name
+    pub poster: String,           // Poster URL
+    pub category: Option<String>, // Category (for image/audio)
+    pub remarks: Option<String>,  // Remarks or description
+    pub created_at: DateTime,
+    pub updated_at: DateTime,
+}
+
+// Card model for membership cards
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Card {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub code: String,       // Card code
+    pub used: bool,         // Whether the card has been used
+    pub vip_level: i32,     // VIP level this card provides
+    pub duration_days: i32, // Duration in days this card provides
+    pub created_at: DateTime,
+    pub used_by: Option<ObjectId>, // User who used this card
+    pub used_at: Option<DateTime>, // When the card was used
+}
+
+// Image model for image galleries
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Image {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub title: String,               // Image title
+    pub en_title: Option<String>,    // English title
+    pub description: Option<String>, // Image description
+    pub images: Vec<ImageItem>,      // Array of images
+    pub cover: ImageItem,            // Cover image
+    pub tags: Vec<String>,           // Tags
+    pub category: String,            // Category
+    pub pages: i32,                  // Number of pages
+    pub uploader: ObjectId,          // User who uploaded
+    pub likes: i32,                  // Number of likes
+    pub language: Option<String>,    // Language
+    pub artists: Option<String>,     // Artists
+    pub need_vip: i32,               // Whether VIP is required: 0=no, 1=yes
+    pub created_at: DateTime,
+    pub updated_at: DateTime,
+}
+
+// Image item structure for images array
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ImageItem {
+    pub url: String, // Image URL
+    pub width: i32,  // Image width
+    pub height: i32, // Image height
+}
+
+// Audio model for audio collections
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Audio {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub title: String,               // Audio title
+    pub en_title: Option<String>,    // English title
+    pub description: Option<String>, // Audio description
+    pub tags: Vec<String>,           // Tags
+    pub category: String,            // Category
+    pub cover: ImageItem,            // Cover image
+    pub audios: Vec<String>,         // Array of audio URLs
+    pub need_vip: i32,               // Whether VIP is required: 0=no, 1=yes
     pub created_at: DateTime,
     pub updated_at: DateTime,
 }

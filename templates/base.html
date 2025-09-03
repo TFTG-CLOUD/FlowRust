@@ -1604,10 +1604,13 @@
         document.getElementById('loggedIn').style.display = isMobile ? 'none' : 'block';
         document.getElementById('mobileNotLoggedIn').style.display = 'none';
         document.getElementById('mobileLoggedIn').style.display = 'block';
-
-        // 更新用户信息显示
-        const displayName = this.currentUser.user.user_nick_name || this.currentUser.user.user_name;
         // console.log(this.currentUser);
+        // 更新用户信息显示
+        let displayName = this.currentUser.user_name || this.currentUser.user_nick_name;
+        // console.log(this.currentUser);
+        if (this.currentUser.user) {
+          displayName = this.currentUser.user.user_nick_name || this.currentUser.user.user_name;
+        }
         document.getElementById('userDisplayName').textContent = displayName;
         document.getElementById('mobileUserDisplayName').textContent = displayName;
 

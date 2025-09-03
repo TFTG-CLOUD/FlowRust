@@ -6,6 +6,18 @@ mkdir -p /var/log/mongodb /var/log/maccms
 # 创建 MongoDB 数据目录
 mkdir -p /var/lib/mongodb
 
+if [ ! -f "/app/maccms_rust" ]; then
+    # 创建必要的目录
+    mkdir -p /app/static/images
+
+    # 下载最新的 MacCMS Rust 版本
+    cd /app && wget -O linux.zip https://github.com/TFTG-CLOUD/maccms-rust/releases/latest/download/linux.zip \
+        && unzip linux.zip \
+        && rm linux.zip
+fi
+
+chmod +x maccms_rust
+
 # 生成随机key
 SESSION_KEY=$(openssl rand -hex 32)
 

@@ -38,8 +38,16 @@
           </div>
         </div>
 
-        <!-- 编辑按钮 -->
-        <div class="flex-shrink-0">
+        <!-- 操作按钮 -->
+        <div class="flex-shrink-0 flex gap-3">
+          <button onclick="showUseCardModal()"
+            class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium transition-all duration-200 transform hover:scale-105 shadow-lg">
+            <i class="fas fa-credit-card mr-2"></i>使用卡卷
+          </button>
+          <button onclick="goToBuyCard()"
+            class="bg-purple-600 hover:bg-purple-700 text-white px-6 py-3 rounded-lg font-medium transition-all duration-200 transform hover:scale-105 shadow-lg">
+            <i class="fas fa-shopping-cart mr-2"></i>购买卡卷
+          </button>
           <button onclick="editProfile()"
             class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-all duration-200 transform hover:scale-105 shadow-lg">
             <i class="fas fa-edit mr-2"></i>编辑资料
@@ -127,11 +135,42 @@
 
 <script>
   // 用户中心页面专用JavaScript
-  document.addEventListener('DOMContentLoaded', function () {
+  document.addEventListener('DOMContentLoaded', async function () {
     loadUserInfo();
     loadWatchHistory();
-    loadStatistics();
+    await loadStatistics();
   });
+
+  // 全局通知系统
+  window.showNotification = function (message, type = 'info', duration = 3000) {
+    const notification = document.createElement('div');
+    const bgColor = {
+      success: 'bg-green-500',
+      error: 'bg-red-500',
+      warning: 'bg-yellow-500',
+      info: 'bg-blue-500'
+    }[type] || 'bg-blue-500';
+
+    notification.className = `fixed top-4 right-4 z-50 ${bgColor} text-white px-6 py-3 rounded-lg shadow-lg transform translate-x-full transition-transform duration-300`;
+    notification.textContent = message;
+
+    document.body.appendChild(notification);
+
+    // Slide in
+    setTimeout(() => {
+      notification.classList.remove('translate-x-full');
+    }, 100);
+
+    // Slide out and remove
+    setTimeout(() => {
+      notification.classList.add('translate-x-full');
+      setTimeout(() => {
+        if (notification.parentNode) {
+          notification.parentNode.removeChild(notification);
+        }
+      }, 300);
+    }, duration);
+  };
 
   async function loadUserInfo() {
     try {
@@ -204,7 +243,7 @@
     historyContainer.innerHTML = historyHTML;
   }
 
-  function loadStatistics() {
+  async function loadStatistics() {
     // 计算统计数据
     const history = JSON.parse(localStorage.getItem('video_play_history') || '[]');
 
@@ -215,9 +254,48 @@
     const totalHours = Math.floor(totalMinutes / 60);
     document.getElementById('totalTime').textContent = totalHours + 'h';
 
-    // 模拟积分和会员天数
-    document.getElementById('userPoints').textContent = Math.floor(Math.random() * 1000);
-    document.getElementById('memberDays').textContent = Math.floor(Math.random() * 365);
+    // 获取真实会员信息
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch('/api/user/vip-info', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+
+        // 更新积分
+        document.getElementById('userPoints').textContent = data.user_points;
+
+        // 更新会员状态
+        if (data.is_vip && data.vip_end_date) {
+          const endDate = new Date(data.vip_end_date);
+          const now = new Date();
+          const daysLeft = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24));
+
+          if (daysLeft > 0) {
+            document.getElementById('memberDays').textContent = `${daysLeft}天`;
+            // 更新会员等级显示
+            const memberDaysElement = document.getElementById('memberDays');
+            memberDaysElement.innerHTML = `${daysLeft}天<br><small class="text-gray-400">VIP${data.vip_level}</small>`;
+          } else {
+            document.getElementById('memberDays').textContent = '已过期';
+          }
+        } else {
+          document.getElementById('memberDays').textContent = '非会员';
+        }
+      } else {
+        // 如果获取失败，使用默认值
+        document.getElementById('userPoints').textContent = '0';
+        document.getElementById('memberDays').textContent = '非会员';
+      }
+    } catch (error) {
+      console.error('获取会员信息失败:', error);
+      document.getElementById('userPoints').textContent = '0';
+      document.getElementById('memberDays').textContent = '非会员';
+    }
   }
 
   function editProfile() {
@@ -247,6 +325,122 @@
       modal.querySelector('div > div').classList.remove('scale-95');
       modal.querySelector('div > div').classList.add('scale-100');
     }, 10);
+  }
+
+  // 购买卡卷
+  async function goToBuyCard() {
+    try {
+      // 获取购买卡卷链接
+      const response = await fetch('/api/config/buy_card');
+      const data = await response.json();
+
+      // console.log(data);
+
+      if (data.success && data.config_value) {
+        // 在新窗口打开购买链接
+        window.open(data.config_value, '_blank');
+      } else {
+        window.showNotification('购买链接暂未配置', 'warning');
+      }
+    } catch (error) {
+      console.error('获取购买链接失败:', error);
+      window.showNotification('获取购买链接失败', 'error');
+    }
+  }
+
+  // 显示使用卡卷弹窗
+  function showUseCardModal() {
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+    modal.innerHTML = `
+    <div class="bg-gray-800 rounded-2xl p-8 max-w-md mx-4 transform transition-all duration-300 scale-95">
+      <div class="text-center mb-6">
+        <div class="w-16 h-16 bg-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+          <i class="fas fa-credit-card text-white text-2xl"></i>
+        </div>
+        <h3 class="text-xl font-bold text-white mb-2">使用卡卷</h3>
+        <p class="text-gray-400">请输入您的卡卷代码</p>
+        <p class="text-gray-400">注意：如果升级或者降级VIP，会重置会员时长。</p>
+      </div>
+      
+      <div class="space-y-4">
+        <div>
+          <input type="text" id="cardCode" placeholder="请输入10位卡卷代码" 
+                 class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-gray placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                 maxlength="10">
+        </div>
+        
+        <div class="flex gap-3">
+          <button onclick="useCard()" 
+                  class="flex-1 bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200">
+            确认使用
+          </button>
+          <button onclick="this.closest('.fixed').remove()" 
+                  class="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg font-medium transition-colors duration-200">
+            取消
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+    document.body.appendChild(modal);
+
+    // 添加动画效果
+    setTimeout(() => {
+      modal.querySelector('div > div').classList.remove('scale-95');
+      modal.querySelector('div > div').classList.add('scale-100');
+    }, 10);
+
+    // 自动聚焦到输入框
+    setTimeout(() => {
+      document.getElementById('cardCode').focus();
+    }, 100);
+  }
+
+  // 使用卡卷
+  async function useCard() {
+    const cardCode = document.getElementById('cardCode').value.trim();
+
+    if (!cardCode) {
+      window.showNotification('请输入卡卷代码', 'warning');
+      return;
+    }
+
+    if (cardCode.length !== 10) {
+      window.showNotification('卡卷代码必须是10位', 'warning');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      console.log(token);
+      const response = await fetch('/api/user/use-card', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ card_code: cardCode })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        window.showNotification(result.message, 'success');
+        // 关闭弹窗
+        document.querySelector('.fixed.inset-0').remove();
+        // 重新加载会员信息
+        setTimeout(async () => {
+          await loadStatistics();
+        }, 1000);
+      } else {
+        window.showNotification(result.message, 'error');
+      }
+    } catch (error) {
+      console.error('使用卡卷失败:', error);
+      window.showNotification('网络错误，请稍后重试', 'error');
+    }
   }
 </script>
 {% endblock %}

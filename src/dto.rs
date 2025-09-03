@@ -257,3 +257,81 @@ pub struct UserResponse {
     pub msg: String,
     pub user: Option<crate::models::User>,
 }
+
+// Card management DTOs
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CardListResponse {
+    pub code: i32,
+    pub msg: String,
+    pub cards: Vec<CardInfo>,
+    pub total: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CardInfo {
+    #[serde(rename = "_id")]
+    pub id: String,
+    pub code: String,
+    pub used: bool,
+    pub vip_level: i32,
+    pub duration_days: i32,
+    pub created_at: String,
+    pub used_by: Option<UserInfo>,
+    pub used_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UserInfo {
+    #[serde(rename = "_id")]
+    pub id: String,
+    pub user_name: String,
+    pub user_nick_name: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GenerateCardRequest {
+    pub count: i32,
+    pub vip_level: i32,
+    pub duration_days: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GenerateCardResponse {
+    pub code: i32,
+    pub msg: String,
+    pub generated_count: i32,
+    pub cards: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeleteCardRequest {
+    pub card_ids: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SearchCardRequest {
+    pub code: String,
+    pub page: Option<i32>,
+    pub limit: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CardPageParams {
+    pub page: Option<i32>,
+    pub limit: Option<i32>,
+}
+
+// VIP validation DTOs
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VipCheckRequest {
+    pub video_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VipCheckResponse {
+    pub success: bool,
+    pub has_access: bool,
+    pub message: String,
+    pub play_url: Option<String>,
+    pub episode_name: Option<String>,
+}

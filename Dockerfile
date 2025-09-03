@@ -26,19 +26,11 @@ RUN echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-${
 RUN apt-get update && apt-get install -y ${MONGODB_PACKAGE} \
     && rm -rf /var/lib/apt/lists/*
 
-# 创建必要的目录
-RUN mkdir -p /app/static/images
-
-# 下载最新的 MacCMS Rust 版本
-RUN cd /app && wget -O linux.zip https://github.com/TFTG-CLOUD/maccms-rust/releases/latest/download/linux.zip \
-    && unzip linux.zip \
-    && rm linux.zip
-
 # 复制启动脚本
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # 设置二进制文件执行权限
-RUN chmod +x /app/maccms_rust /usr/bin/mongod /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/bin/mongod /usr/local/bin/entrypoint.sh
 
 # 暴露端口
 EXPOSE 8080

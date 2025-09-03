@@ -9,9 +9,14 @@ use mongodb::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::index_manager::{IndexManager, CollectionIndexInfo, SingleIndexInfo};
-use crate::models::{Binding, Collection, Config, Type, Vod};
+use crate::dto::{
+    CardInfo, CardListResponse, CardPageParams, DeleteCardRequest, GenerateCardRequest,
+    GenerateCardResponse, SearchCardRequest, UserInfo,
+};
+use crate::index_manager::IndexManager;
+use crate::models::{Binding, Card, Collection, Config, Type, User, Vod};
 use crate::scheduled_task::ScheduledTaskManager;
+use crate::template::TERA;
 
 // Helper function to check if user is authenticated
 fn check_auth(session: &Session) -> Result<(), HttpResponse> {
@@ -576,6 +581,7 @@ pub async fn create_vod(
         vod_hits_week: Some(0),
         vod_hits_month: Some(0),
         vod_score: Some("0.0".to_string()),
+        need_vip: 0,
         vod_play_urls: vec![], // Empty initially
     };
 
@@ -1496,7 +1502,10 @@ pub async fn update_scheduled_task_config(
     if let Err(response) = check_auth(&session) {
         return response;
     }
-    match task_manager.update_config(config.enabled, config.interval_hours).await {
+    match task_manager
+        .update_config(config.enabled, config.interval_hours)
+        .await
+    {
         Ok(true) => HttpResponse::Ok().json(json!({
             "success": true,
             "message": "定时任务配置已更新"
@@ -1569,12 +1578,17 @@ impl Default for BatchDeleteProgress {
 // 类型别名简化复杂类型
 type BatchDeleteProgressMap = std::collections::HashMap<
     String,
-    (BatchDeleteProgress, String, Option<tokio::task::JoinHandle<()>>),
+    (
+        BatchDeleteProgress,
+        String,
+        Option<tokio::task::JoinHandle<()>>,
+    ),
 >;
 type BatchDeleteProgressStore = tokio::sync::RwLock<BatchDeleteProgressMap>;
 
 // 全局批量删除任务进度存储
-static BATCH_DELETE_PROGRESS: std::sync::OnceLock<BatchDeleteProgressStore> = std::sync::OnceLock::new();
+static BATCH_DELETE_PROGRESS: std::sync::OnceLock<BatchDeleteProgressStore> =
+    std::sync::OnceLock::new();
 
 // 初始化批量删除任务进度存储
 fn get_batch_delete_progress_store() -> &'static BatchDeleteProgressStore {
@@ -1591,7 +1605,11 @@ pub async fn get_batch_delete_progress(task_id: &str) -> Option<BatchDeleteProgr
 }
 
 // 更新批量删除任务进度
-async fn update_batch_delete_progress(task_id: &str, progress: BatchDeleteProgress, task_name: String) {
+async fn update_batch_delete_progress(
+    task_id: &str,
+    progress: BatchDeleteProgress,
+    task_name: String,
+) {
     let store = get_batch_delete_progress_store();
     let mut progress_map = store.write().await;
     if let Some((current_progress, current_name, handle)) = progress_map.get_mut(task_id) {
@@ -1649,10 +1667,7 @@ pub async fn get_all_batch_delete_tasks() -> Vec<serde_json::Value> {
 }
 
 // 启动批量删除任务
-pub async fn start_batch_delete_source(
-    db: web::Data<Database>,
-    source_name: String,
-) -> String {
+pub async fn start_batch_delete_source(db: web::Data<Database>, source_name: String) -> String {
     let task_id = uuid::Uuid::new_v4().to_string();
     let task_id_clone = task_id.clone();
 
@@ -1674,7 +1689,12 @@ pub async fn start_batch_delete_source(
                 log: "无法获取视频总数".to_string(),
             };
 
-            update_batch_delete_progress(&task_id, failed_progress, format!("批量删除播放源: {}", source_name)).await;
+            update_batch_delete_progress(
+                &task_id,
+                failed_progress,
+                format!("批量删除播放源: {}", source_name),
+            )
+            .await;
             return task_id;
         }
     };
@@ -1690,13 +1710,21 @@ pub async fn start_batch_delete_source(
         log: "开始批量删除播放源任务".to_string(),
     };
 
-    update_batch_delete_progress(&task_id, initial_progress, format!("批量删除播放源: {}", source_name)).await;
+    update_batch_delete_progress(
+        &task_id,
+        initial_progress,
+        format!("批量删除播放源: {}", source_name),
+    )
+    .await;
 
     // 启动后台任务
     let db_clone = db.clone();
     let source_name_clone = source_name.clone();
     let task_handle = tokio::spawn(async move {
-        if let Err(e) = execute_batch_delete_inner(db_clone, &task_id_clone, &source_name_clone, BATCH_SIZE).await {
+        if let Err(e) =
+            execute_batch_delete_inner(db_clone, &task_id_clone, &source_name_clone, BATCH_SIZE)
+                .await
+        {
             eprintln!("Batch delete failed: {}", e);
 
             let failed_progress = BatchDeleteProgress {
@@ -1706,7 +1734,12 @@ pub async fn start_batch_delete_source(
                 total_count: total_count_u64,
                 log: format!("批量删除失败: {}", e),
             };
-            update_batch_delete_progress(&task_id_clone, failed_progress, format!("批量删除播放源: {}", source_name_clone)).await;
+            update_batch_delete_progress(
+                &task_id_clone,
+                failed_progress,
+                format!("批量删除播放源: {}", source_name_clone),
+            )
+            .await;
         }
     });
 
@@ -1716,17 +1749,20 @@ pub async fn start_batch_delete_source(
     if let Some((_, _, handle_ref)) = progress_map.get_mut(&task_id) {
         *handle_ref = Some(task_handle);
     } else {
-        progress_map.insert(task_id.clone(), (
-            BatchDeleteProgress {
-                status: "running".to_string(),
-                processed_count: 0,
-                deleted_count: 0,
-                total_count: total_count_u64,
-                log: "开始批量删除播放源任务".to_string(),
-            },
-            format!("批量删除播放源: {}", source_name),
-            Some(task_handle)
-        ));
+        progress_map.insert(
+            task_id.clone(),
+            (
+                BatchDeleteProgress {
+                    status: "running".to_string(),
+                    processed_count: 0,
+                    deleted_count: 0,
+                    total_count: total_count_u64,
+                    log: "开始批量删除播放源任务".to_string(),
+                },
+                format!("批量删除播放源: {}", source_name),
+                Some(task_handle),
+            ),
+        );
     }
 
     task_id
@@ -1773,9 +1809,17 @@ async fn execute_batch_delete_inner(
                 processed_count: total_count_u64,
                 deleted_count,
                 total_count: total_count_u64,
-                log: format!("批量删除完成：处理了 {} 个视频，删除了 {} 个播放源", processed_count, deleted_count),
+                log: format!(
+                    "批量删除完成：处理了 {} 个视频，删除了 {} 个播放源",
+                    processed_count, deleted_count
+                ),
             };
-            update_batch_delete_progress(task_id, completed_progress, format!("批量删除播放源: {}", source_name)).await;
+            update_batch_delete_progress(
+                task_id,
+                completed_progress,
+                format!("批量删除播放源: {}", source_name),
+            )
+            .await;
             break;
         }
 
@@ -1817,7 +1861,10 @@ async fn execute_batch_delete_inner(
                     };
 
                     // 这里我们可以选择不等待update_one，增加并发性
-                    if let Err(e) = collection.update_one(doc! {"_id": vod_id}, update_doc, None).await {
+                    if let Err(e) = collection
+                        .update_one(doc! {"_id": vod_id}, update_doc, None)
+                        .await
+                    {
                         eprintln!("Failed to update vod {}: {}", vod_id, e);
                         // 继续处理，不因为单个错误而停止
                     }
@@ -1833,9 +1880,17 @@ async fn execute_batch_delete_inner(
                     processed_count,
                     deleted_count,
                     total_count: total_count_u64,
-                    log: format!("正在处理中... 已处理 {}/{} 个视频", processed_count, total_count_u64),
+                    log: format!(
+                        "正在处理中... 已处理 {}/{} 个视频",
+                        processed_count, total_count_u64
+                    ),
                 };
-                update_batch_delete_progress(task_id, progress, format!("批量删除播放源: {}", source_name)).await;
+                update_batch_delete_progress(
+                    task_id,
+                    progress,
+                    format!("批量删除播放源: {}", source_name),
+                )
+                .await;
             }
         }
 
@@ -1847,9 +1902,17 @@ async fn execute_batch_delete_inner(
                 processed_count: total_count_u64,
                 deleted_count,
                 total_count: total_count_u64,
-                log: format!("批量删除完成：处理了 {} 个视频，删除了 {} 个播放源", processed_count, deleted_count),
+                log: format!(
+                    "批量删除完成：处理了 {} 个视频，删除了 {} 个播放源",
+                    processed_count, deleted_count
+                ),
             };
-            update_batch_delete_progress(task_id, completed_progress, format!("批量删除播放源: {}", source_name)).await;
+            update_batch_delete_progress(
+                task_id,
+                completed_progress,
+                format!("批量删除播放源: {}", source_name),
+            )
+            .await;
             break;
         }
     }
@@ -1877,9 +1940,7 @@ pub async fn batch_delete_source(
 
     // 检查是否存在正在运行的任务
     let running_tasks = get_all_batch_delete_tasks().await;
-    let has_running = running_tasks
-        .iter()
-        .any(|task| task["status"] == "running");
+    let has_running = running_tasks.iter().any(|task| task["status"] == "running");
 
     if has_running {
         return HttpResponse::BadRequest().json(json!({
@@ -1900,14 +1961,18 @@ pub async fn batch_delete_source(
 }
 
 // GET /api/admin/batch-delete/progress/{task_id}
-pub async fn get_batch_delete_progress_handler(path: web::Path<String>, session: Session) -> impl Responder {
+pub async fn get_batch_delete_progress_handler(
+    path: web::Path<String>,
+    session: Session,
+) -> impl Responder {
     if let Err(response) = check_auth(&session) {
         return response;
     }
 
     let task_id = path.into_inner();
 
-    let progress = get_batch_delete_progress(&task_id).await
+    let progress = get_batch_delete_progress(&task_id)
+        .await
         .unwrap_or_else(|| BatchDeleteProgress {
             status: "not_found".to_string(),
             processed_count: 0,
@@ -1937,7 +2002,10 @@ pub async fn get_running_batch_delete_tasks_handler(session: Session) -> impl Re
 }
 
 // POST /api/admin/batch-delete/stop/{task_id}
-pub async fn stop_batch_delete_task_handler(path: web::Path<String>, session: Session) -> impl Responder {
+pub async fn stop_batch_delete_task_handler(
+    path: web::Path<String>,
+    session: Session,
+) -> impl Responder {
     if let Err(response) = check_auth(&session) {
         return response;
     }
@@ -1956,5 +2024,397 @@ pub async fn stop_batch_delete_task_handler(path: web::Path<String>, session: Se
             "success": false,
             "message": "任务不存在或已经停止"
         }))
+    }
+}
+
+// ============= 卡卷管理功能 =============
+
+// GET /admin/cards
+pub async fn admin_cards_page(
+    session: Session,
+    db: web::Data<Database>,
+    site_data_manager: web::Data<crate::site_data::SiteDataManager>,
+) -> impl Responder {
+    if let Err(response) = check_auth(&session) {
+        return response;
+    }
+
+    match crate::web_handlers::with_site_data(
+        db.clone(),
+        site_data_manager.clone(),
+        |mut context, _site_data| async move {
+            context.insert("page_title", "卡卷管理");
+
+            TERA.render("admin/cards.html", &context).map_err(|e| {
+                crate::web_handlers::handle_template_rendering_error(
+                    "admin/cards.html",
+                    &e,
+                    Some("Admin cards management page"),
+                    Some("Admin access required"),
+                );
+                Box::new(e) as Box<dyn std::error::Error>
+            })
+        },
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "error": format!("Template error: {}", e)
+        })),
+    }
+}
+
+// GET /api/admin/cards
+pub async fn get_cards_list(
+    session: Session,
+    db: web::Data<Database>,
+    query: web::Query<CardPageParams>,
+) -> impl Responder {
+    if let Err(response) = check_auth(&session) {
+        return response;
+    }
+
+    let page = query.page.unwrap_or(1);
+    let limit = query.limit.unwrap_or(20);
+    let skip = (page - 1) * limit;
+
+    let cards_collection = db.collection::<Card>("cards");
+    let users_collection = db.collection::<User>("users");
+
+    // 获取卡卷总数
+    let total = cards_collection
+        .count_documents(None, None)
+        .await
+        .unwrap_or(0);
+
+    // 获取卡卷列表
+    let find_options = FindOptions::builder()
+        .skip(skip as u64)
+        .limit(limit as i64)
+        .sort(doc! {"created_at": -1})
+        .build();
+
+    let mut cards = match cards_collection.find(None, find_options).await {
+        Ok(cursor) => cursor.try_collect().await.unwrap_or_else(|_| vec![]),
+        Err(_) => vec![],
+    };
+
+    // 获取用户信息并转换格式
+    let mut card_infos = Vec::new();
+    for card in &mut cards {
+        let used_by = if card.used {
+            if let Some(user_id) = card.used_by {
+                match users_collection.find_one(doc! {"_id": user_id}, None).await {
+                    Ok(Some(user)) => Some(UserInfo {
+                        id: user_id.to_string(),
+                        user_name: user.user_name,
+                        user_nick_name: user.user_nick_name,
+                    }),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let card_info = CardInfo {
+            id: card.id.unwrap_or_default().to_string(),
+            code: card.code.clone(),
+            used: card.used,
+            vip_level: card.vip_level,
+            duration_days: card.duration_days,
+            created_at: card.created_at.to_string(),
+            used_by,
+            used_at: card.used_at.map(|dt| dt.to_string()),
+        };
+        card_infos.push(card_info);
+    }
+
+    HttpResponse::Ok().json(CardListResponse {
+        code: 1,
+        msg: "获取卡卷列表成功".to_string(),
+        cards: card_infos,
+        total: total.try_into().unwrap_or(0),
+    })
+}
+
+// POST /api/admin/cards/generate
+pub async fn generate_cards(
+    session: Session,
+    db: web::Data<Database>,
+    request: web::Json<GenerateCardRequest>,
+) -> impl Responder {
+    if let Err(response) = check_auth(&session) {
+        return response;
+    }
+
+    // 验证参数
+    if request.count <= 0 || request.count > 1000 {
+        return HttpResponse::BadRequest().json(json!({
+            "code": 0,
+            "msg": "生成数量必须在1-1000之间"
+        }));
+    }
+
+    if request.vip_level < 1 || request.duration_days <= 0 {
+        return HttpResponse::BadRequest().json(json!({
+            "code": 0,
+            "msg": "会员等级和时长必须大于0"
+        }));
+    }
+
+    let cards_collection = db.collection::<Card>("cards");
+    let mut generated_cards = Vec::new();
+    let mut generated_codes = Vec::new();
+
+    // 生成随机卡卷
+    for _ in 0..request.count {
+        let code = generate_random_code();
+        let new_card = Card {
+            id: None,
+            code: code.clone(),
+            used: false,
+            vip_level: request.vip_level,
+            duration_days: request.duration_days,
+            created_at: mongodb::bson::DateTime::now(),
+            used_by: None,
+            used_at: None,
+        };
+
+        match cards_collection.insert_one(new_card, None).await {
+            Ok(_) => {
+                generated_cards.push(code.clone());
+                generated_codes.push(code);
+            }
+            Err(e) => {
+                eprintln!("Failed to insert card: {}", e);
+            }
+        }
+    }
+
+    HttpResponse::Ok().json(GenerateCardResponse {
+        code: 1,
+        msg: format!("成功生成 {} 张卡卷", generated_cards.len()),
+        generated_count: generated_cards.len() as i32,
+        cards: generated_codes,
+    })
+}
+
+// POST /api/admin/cards/delete
+pub async fn delete_cards(
+    session: Session,
+    db: web::Data<Database>,
+    request: web::Json<DeleteCardRequest>,
+) -> impl Responder {
+    if let Err(response) = check_auth(&session) {
+        return response;
+    }
+
+    if request.card_ids.is_empty() {
+        return HttpResponse::BadRequest().json(json!({
+            "code": 0,
+            "msg": "请选择要删除的卡卷"
+        }));
+    }
+
+    let cards_collection = db.collection::<Card>("cards");
+    let mut deleted_count = 0;
+
+    for card_id_str in &request.card_ids {
+        if let Ok(card_id) = mongodb::bson::oid::ObjectId::parse_str(card_id_str) {
+            match cards_collection
+                .delete_one(doc! {"_id": card_id}, None)
+                .await
+            {
+                Ok(result) => {
+                    if result.deleted_count > 0 {
+                        deleted_count += 1;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to delete card {}: {}", card_id_str, e);
+                }
+            }
+        }
+    }
+
+    HttpResponse::Ok().json(json!({
+        "code": 1,
+        "msg": format!("成功删除 {} 张卡卷", deleted_count),
+        "deleted_count": deleted_count
+    }))
+}
+
+// POST /api/admin/cards/search
+pub async fn search_cards(
+    session: Session,
+    db: web::Data<Database>,
+    request: web::Json<SearchCardRequest>,
+) -> impl Responder {
+    if let Err(response) = check_auth(&session) {
+        return response;
+    }
+
+    if request.code.trim().is_empty() {
+        return HttpResponse::BadRequest().json(json!({
+            "code": 0,
+            "msg": "请输入卡卷代码"
+        }));
+    }
+
+    let cards_collection = db.collection::<Card>("cards");
+    let users_collection = db.collection::<User>("users");
+
+    let card = match cards_collection
+        .find_one(doc! {"code": request.code.trim()}, None)
+        .await
+    {
+        Ok(Some(card)) => card,
+        Ok(None) => {
+            return HttpResponse::Ok().json(CardListResponse {
+                code: 1,
+                msg: "未找到匹配的卡卷".to_string(),
+                cards: vec![],
+                total: 0,
+            });
+        }
+        Err(e) => {
+            eprintln!("Database error: {}", e);
+            return HttpResponse::InternalServerError().json(json!({
+                "code": 0,
+                "msg": "服务器错误"
+            }));
+        }
+    };
+
+    // 获取用户信息
+    let used_by = if card.used {
+        if let Some(user_id) = card.used_by {
+            match users_collection.find_one(doc! {"_id": user_id}, None).await {
+                Ok(Some(user)) => Some(UserInfo {
+                    id: user_id.to_string(),
+                    user_name: user.user_name,
+                    user_nick_name: user.user_nick_name,
+                }),
+                _ => None,
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let card_info = CardInfo {
+        id: card.id.unwrap_or_default().to_string(),
+        code: card.code,
+        used: card.used,
+        vip_level: card.vip_level,
+        duration_days: card.duration_days,
+        created_at: card.created_at.to_string(),
+        used_by,
+        used_at: card.used_at.map(|dt| dt.to_string()),
+    };
+
+    HttpResponse::Ok().json(CardListResponse {
+        code: 1,
+        msg: "搜索成功".to_string(),
+        cards: vec![card_info],
+        total: 1,
+    })
+}
+
+// 生成10位随机卡卷代码
+fn generate_random_code() -> String {
+    use rand::{thread_rng, Rng};
+    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let mut rng = thread_rng();
+    let code: String = (0..10)
+        .map(|_| {
+            let idx = rng.gen_range(0..CHARSET.len());
+            CHARSET[idx] as char
+        })
+        .collect();
+    code
+}
+
+// DTO for batch VIP setting request
+#[derive(Debug, Deserialize)]
+pub struct BatchSetVipRequest {
+    pub vod_ids: Vec<String>,
+    pub need_vip: i32,
+}
+
+// Batch set VIP content
+pub async fn batch_set_vip(
+    session: Session,
+    db: web::Data<Database>,
+    request: web::Json<BatchSetVipRequest>,
+) -> impl Responder {
+    // Check authentication
+    if let Err(e) = check_auth(&session) {
+        return e;
+    }
+
+    let vod_ids = &request.vod_ids;
+    let need_vip = request.need_vip;
+
+    if vod_ids.is_empty() {
+        return HttpResponse::BadRequest().json(json!({
+            "success": false,
+            "message": "请选择要设置的视频"
+        }));
+    }
+
+    if need_vip < 0 || need_vip > 5 {
+        return HttpResponse::BadRequest().json(json!({
+            "success": false,
+            "message": "VIP等级必须在0-5之间"
+        }));
+    }
+
+    let vod_collection = db.collection::<Vod>("vods");
+
+    // Convert string IDs to ObjectId
+    let object_ids: Result<Vec<_>, _> = vod_ids
+        .iter()
+        .map(|id| mongodb::bson::oid::ObjectId::parse_str(id))
+        .collect();
+
+    let object_ids = match object_ids {
+        Ok(ids) => ids,
+        Err(e) => {
+            return HttpResponse::BadRequest().json(json!({
+                "success": false,
+                "message": format!("无效的视频ID: {}", e)
+            }));
+        }
+    };
+
+    // Update multiple videos
+    let result = vod_collection
+        .update_many(
+            doc! { "_id": { "$in": object_ids } },
+            doc! { "$set": { "need_vip": need_vip } },
+            None,
+        )
+        .await;
+
+    match result {
+        Ok(update_result) => HttpResponse::Ok().json(json!({
+            "success": true,
+            "message": format!("成功设置 {} 个视频的VIP等级", update_result.modified_count),
+            "modified_count": update_result.modified_count
+        })),
+        Err(e) => {
+            eprintln!("Database error when batch setting VIP: {}", e);
+            HttpResponse::InternalServerError().json(json!({
+                "success": false,
+                "message": "服务器错误"
+            }))
+        }
     }
 }

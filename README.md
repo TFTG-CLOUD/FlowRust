@@ -538,15 +538,14 @@ wget https://raw.githubusercontent.com/TFTG-CLOUD/MacCMS-rust/refs/heads/main/en
 
 # 构建 Docker 镜像
 docker build -t maccms-rust:latest .
-
-#启动镜像
+ #启动镜像
 docker run -d \
   --name maccms-rust \
   -p 8080:8080 \
   -e ADMIN_USER=myuser \
   -e ADMIN_PASS=mypassword \
   -v ./maccms_data:/var/lib/mongodb \
-  -v ./maccms_static:/app/static \
+  -v ./maccms-rust:/app \
   -v ./maccms_logo:/var/log \
   --restart unless-stopped \
   maccms-rust:latest
@@ -554,9 +553,9 @@ docker run -d \
 #相关参数和文件夹说明
 ADMIN_USER 设置后台用户名
 ADMIN_PASS 设置后台密码，推荐复杂点
-/var/lib/mongodb 数据库文件夹，可自行备份
-/app/static 模板文件夹
-/var/log 相关运行日志
+./maccms_data 数据库文件夹，可自行备份
+./maccms-rust 程序源码目录
+./maccms_logo 相关运行日志
 
 # 查看容器状态
 docker ps

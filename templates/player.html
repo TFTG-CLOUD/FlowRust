@@ -32,19 +32,9 @@
             <i class="fas fa-play-circle text-primary mr-3"></i>{{ video.vod_name }} 在线播放
         </h2>
 
-        <!-- 视频播放器 -->
+        <!-- 视频播放器容器 -->
         <div class="video-container">
-            <!-- Video Element -->
-            <video id="video-player" class="video-player" preload="metadata"
-                poster="{{ video.vod_pic | default(value='https://images.unsplash.com/photo-1536440136628-849c177e76a1?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80') }}"
-                controls playsinline>
-                <source src="{{ play_url | safe }}"
-                    type="{% if play_url | split(pat='.') | last == 'm3u8' %}application/x-mpegURL{% else %}video/mp4{% endif %}">
-                <p class="text-white text-center p-8">
-                    您的浏览器不支持视频播放。<br>
-                    请使用最新版本的Chrome、Firefox、Safari或Edge浏览器。
-                </p>
-            </video>
+            <!-- 视频播放器将通过JavaScript动态插入 -->
         </div>
 
         <style>
@@ -267,10 +257,126 @@
 
     // Initialize player
     document.addEventListener('DOMContentLoaded', function () {
-        initPlayer();
+        // 使用新的VIP验证API检查权限
+        checkVipAccess();
+        
         initTabSwitching();
         initPlayHistory();
     });
+
+    // VIP权限验证函数
+    async function checkVipAccess() {
+        const videoId = "{{ video._id['$oid'] }}";
+        const videoNeedVip = {{ video.need_vip | default(value=0) }};
+        
+        try {
+            // 获取用户token
+            const token = localStorage.getItem('auth_token');
+            
+            if (!token && videoNeedVip > 0) {
+                // VIP内容但用户未登录
+                showVipRestricted('请先登录以观看VIP内容', false);
+                return;
+            }
+            
+            // 调用VIP验证API
+            const response = await fetch('/api/user/vip-check', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ video_id: videoId })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success && data.has_access) {
+                // 有权限，插入视频播放器并初始化
+                insertVideoPlayer(data.play_url, data.episode_name);
+                initPlayer();
+            } else {
+                // 无权限，显示VIP限制提示
+                const showUpgradeButton = videoNeedVip > 0;
+                showVipRestricted(data.message || '权限不足', showUpgradeButton);
+            }
+        } catch (error) {
+            console.error('VIP权限验证失败:', error);
+            
+            if (videoNeedVip === 0) {
+                // 公开内容，直接显示播放器
+                insertVideoPlayer();
+                initPlayer();
+            } else {
+                // VIP内容但验证失败
+                showVipRestricted('权限验证失败，请刷新页面重试', true);
+            }
+        }
+    }
+
+    // 插入视频播放器
+    function insertVideoPlayer(apiPlayUrl = null, apiEpisodeName = null) {
+        const videoContainer = document.querySelector('.video-container');
+        // 优先使用API返回的播放链接，否则使用后端传递的链接
+        const playUrl = apiPlayUrl || "{{ play_url | safe }}";
+        const posterUrl = "{{ video.vod_pic | default(value='https://images.unsplash.com/photo-1536440136628-849c177e76a1?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80') }}";
+        const isM3u8 = playUrl.includes('.m3u8');
+        
+        // 如果API返回了剧集名称，更新当前播放的剧集显示
+        if (apiEpisodeName) {
+            const currentEpisodeSpan = document.querySelector('.episode-controls .text-white');
+            if (currentEpisodeSpan) {
+                currentEpisodeSpan.textContent = apiEpisodeName;
+            }
+        }
+        
+        videoContainer.innerHTML = `
+            <video id="video-player" class="video-player" preload="metadata"
+                poster="${posterUrl}"
+                controls playsinline>
+                <source src="${playUrl}"
+                    type="${isM3u8 ? 'application/x-mpegURL' : 'video/mp4'}">
+                <p class="text-white text-center p-8">
+                    您的浏览器不支持视频播放。<br>
+                    请使用最新版本的Chrome、Firefox、Safari或Edge浏览器。
+                </p>
+            </video>
+        `;
+    }
+    
+    // 显示VIP限制提示
+    function showVipRestricted(message, showUpgradeButton) {
+        const videoContainer = document.querySelector('.video-container');
+        const upgradeButtonHtml = showUpgradeButton ? 
+            `<button onclick="window.location.href='/user/profile'" 
+                    class="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-8 py-3 rounded-lg font-medium transition-all duration-200 transform hover:scale-105">
+                <i class="fas fa-credit-card mr-2"></i>购买卡卷升级
+            </button>` : '';
+        
+        videoContainer.innerHTML = `
+            <div id="vip-access-container">
+                <!-- VIP限制提示 -->
+                <div class="absolute inset-0 bg-black bg-opacity-90 flex items-center justify-center rounded-xl">
+                    <div class="text-center text-white p-8">
+                        <div class="mb-6">
+                            <i class="fas fa-crown text-6xl text-yellow-500 mb-4"></i>
+                            <h3 class="text-2xl font-bold mb-2">VIP专享内容</h3>
+                            <p class="text-lg mb-6">${message}</p>
+                        </div>
+                        <div class="space-y-3">
+                            ${upgradeButtonHtml}
+                            <button onclick="window.location.href='/'" 
+                                    class="bg-gray-600 hover:bg-gray-700 text-white px-8 py-3 rounded-lg font-medium transition-colors duration-200 ${showUpgradeButton ? 'ml-3' : ''}">
+                                <i class="fas fa-home mr-2"></i>返回首页
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // UserAuth等待函数已移除，权限检查在后端完成
 
     // Initialize play history tracking
     function initPlayHistory() {

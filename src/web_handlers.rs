@@ -1,10 +1,11 @@
-use crate::models::{Type, User, Vod};
+use crate::models::{Card, Config, Type, User, Vod};
 use crate::template::TERA;
-use actix_web::{web, HttpResponse, Responder};
+use actix_web::{web, HttpResponse, Responder, HttpMessage};
 use chrono::Datelike;
 use futures::stream::TryStreamExt;
 use mongodb::{bson::doc, options::FindOptions, Database};
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 
 // Helper function to get play URL and episode name
 fn get_play_info(
@@ -69,7 +70,6 @@ use crate::init_data;
 use crate::site_data::SiteDataManager;
 use actix_session::Session;
 use actix_web_flash_messages::FlashMessage;
-use serde::{Deserialize, Serialize};
 use std::error::Error;
 
 #[derive(Serialize)]
@@ -79,7 +79,7 @@ struct CategorizedVideos {
 }
 
 // 辅助函数：获取站点数据并添加到模板上下文
-async fn with_site_data<F, R>(
+pub async fn with_site_data<F, R>(
     db: web::Data<Database>,
     site_data_manager: web::Data<SiteDataManager>,
     template_handler: F,
@@ -139,7 +139,7 @@ where
 
 
 // 通用模板渲染错误处理器
-fn handle_template_rendering_error(
+pub fn handle_template_rendering_error(
     template_name: &str,
     error: &tera::Error,
     context_info: Option<&str>,
@@ -265,8 +265,9 @@ pub async fn video_player_handler_wrapper(
     path: web::Path<(String, String)>,
     db: web::Data<Database>,
     site_data_manager: web::Data<SiteDataManager>,
+    req: actix_web::HttpRequest,
 ) -> impl Responder {
-    video_player_handler(path, db, site_data_manager).await
+    video_player_handler(path, db, site_data_manager, req).await
 }
 
 pub async fn list_page_handler_wrapper(
@@ -574,6 +575,7 @@ pub async fn video_player_handler(
     path: web::Path<(String, String)>,
     db: web::Data<Database>,
     site_data_manager: web::Data<SiteDataManager>,
+    http_req: actix_web::HttpRequest,
 ) -> impl Responder {
     let (vod_id, play_index) = path.into_inner();
 
@@ -648,12 +650,11 @@ pub async fn video_player_handler(
             context.insert("vod_pubdate_timestamp", &pubdate_timestamp);
             context.insert("video", &video);
 
-            // 2. Get play URL and episode name
-            let (play_url, current_episode_name) =
-                match get_play_info(&video, play_source, play_idx) {
-                    Ok(info) => info,
-                    Err(e) => return Err(e),
-                };
+            // 获取播放链接
+            let (play_url, current_episode_name) = match get_play_info(&video, play_source, play_idx) {
+                Ok((url, name)) => (url, name),
+                Err(e) => return Err(e),
+            };
 
             context.insert("play_url", &play_url);
             context.insert("play_index", &play_idx);
@@ -1517,4 +1518,330 @@ pub async fn user_profile_page(
             HttpResponse::InternalServerError().body(format!("Error: {}", e))
         }
     }
+}
+
+// DTO for card usage request
+#[derive(Debug, Deserialize)]
+pub struct UseCardRequest {
+    pub card_code: String,
+}
+
+// DTO for card usage response
+#[derive(Debug, Serialize)]
+pub struct UseCardResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+// Get user VIP info
+pub async fn get_user_vip_info(http_req: actix_web::HttpRequest) -> impl Responder {
+    // Check if user is authenticated
+    let user = match http_req.extensions().get::<User>() {
+        Some(user) => user.clone(),
+        None => {
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "success": false,
+                "message": "请先登录"
+            }));
+        }
+    };
+
+    let current_time = chrono::Utc::now();
+    let is_vip = if let Some(vip_end) = user.vip_end_time {
+        vip_end.timestamp_millis() > current_time.timestamp_millis()
+    } else {
+        false
+    };
+
+    let vip_end_date = user.vip_end_time.map(|end| {
+        end.timestamp_millis() as i64
+    });
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "success": true,
+        "vip_level": user.vip_level.unwrap_or(0),
+        "is_vip": is_vip,
+        "vip_end_date": vip_end_date,
+        "user_points": user.user_points
+    }))
+}
+
+// Get buy card config
+pub async fn get_buy_card_config(db: web::Data<Database>) -> impl Responder {
+    let config_collection = db.collection::<Config>("configs");
+    
+    match config_collection
+        .find_one(doc! { "config_key": "buy_card" }, None)
+        .await
+    {
+        Ok(Some(config)) => HttpResponse::Ok().json(serde_json::json!({
+            "success": true,
+            "config_value": config.config_value
+        })),
+        Ok(None) => HttpResponse::Ok().json(serde_json::json!({
+            "success": false,
+            "message": "购买链接未配置"
+        })),
+        Err(e) => {
+            eprintln!("Database error when fetching buy_card config: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "success": false,
+                "message": "服务器错误"
+            }))
+        }
+    }
+}
+
+// Use card endpoint
+pub async fn use_card(
+    db: web::Data<Database>,
+    req: web::Json<UseCardRequest>,
+    http_req: actix_web::HttpRequest,
+) -> impl Responder {
+    // Check if user is authenticated
+    let user = match http_req.extensions().get::<User>() {
+        Some(user) => user.clone(),
+        None => {
+            return HttpResponse::Unauthorized().json(serde_json::json!({
+                "success": false,
+                "message": "请先登录"
+            }));
+        }
+    };
+
+    let card_code = &req.card_code;
+    
+    // Validate card code format
+    if card_code.len() != 10 || !card_code.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "success": false,
+            "message": "卡卷代码格式不正确"
+        }));
+    }
+
+    let card_collection = db.collection::<Card>("cards");
+    
+    // Find the card
+    let card = match card_collection
+        .find_one(doc! { "code": card_code }, None)
+        .await
+    {
+        Ok(Some(card)) => card,
+        Ok(None) => {
+            return HttpResponse::NotFound().json(serde_json::json!({
+                "success": false,
+                "message": "卡卷不存在"
+            }));
+        }
+        Err(e) => {
+            eprintln!("Database error when finding card: {}", e);
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "success": false,
+                "message": "服务器错误"
+            }));
+        }
+    };
+
+    // Check if card is already used
+    if card.used {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "success": false,
+            "message": "该卡卷已被使用"
+        }));
+    }
+
+    // Calculate new VIP expiration date
+    let current_time = chrono::Utc::now();
+    let current_vip_end = user.vip_end_time.map(|end| end.timestamp_millis()).unwrap_or(0);
+    let current_vip_level = user.vip_level.unwrap_or(0);
+    let duration_ms = (card.duration_days as i64) * 24 * 60 * 60 * 1000;
+    
+    let (new_vip_end, message_suffix) = if current_vip_level == card.vip_level {
+        // 相同VIP等级，延长现有时长
+        let new_end = if current_vip_end > current_time.timestamp_millis() {
+            current_vip_end + duration_ms
+        } else {
+            current_time.timestamp_millis() + duration_ms
+        };
+        (new_end, format!("VIP{}时长已延长{}天", card.vip_level, card.duration_days))
+    } else {
+        // 不同VIP等级，重置时长
+        let new_end = current_time.timestamp_millis() + duration_ms;
+        let level_change = if current_vip_level > 0 {
+            format!("VIP{}已升级为VIP{}，重置时长{}天", current_vip_level, card.vip_level, card.duration_days)
+        } else {
+            format!("您已成为VIP{}会员，有效期{}天", card.vip_level, card.duration_days)
+        };
+        (new_end, level_change)
+    };
+
+    let new_vip_end_datetime = mongodb::bson::DateTime::from_millis(new_vip_end);
+
+    // Update user VIP status
+    let user_collection = db.collection::<User>("users");
+    let user_update = doc! {
+        "$set": {
+            "vip_level": card.vip_level,
+            "vip_end_time": new_vip_end_datetime
+        }
+    };
+
+    if let Err(e) = user_collection
+        .update_one(doc! { "_id": &user.id }, user_update, None)
+        .await
+    {
+        eprintln!("Failed to update user VIP status: {}", e);
+        return HttpResponse::InternalServerError().json(serde_json::json!({
+            "success": false,
+            "message": "服务器错误"
+        }));
+    }
+
+    // Mark card as used
+    let card_update = doc! {
+        "$set": {
+            "used": true,
+            "used_by": user.id.clone(),
+            "used_at": mongodb::bson::DateTime::now()
+        }
+    };
+
+    if let Err(e) = card_collection
+        .update_one(doc! { "_id": card.id }, card_update, None)
+        .await
+    {
+        eprintln!("Failed to update card status: {}", e);
+        return HttpResponse::InternalServerError().json(serde_json::json!({
+            "success": false,
+            "message": "服务器错误"
+        }));
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "success": true,
+        "message": format!("卡卷使用成功！{}", message_suffix)
+    }))
+}
+
+// VIP access validation API endpoint
+pub async fn vip_check_handler(
+    req: actix_web::HttpRequest,
+    db: web::Data<Database>,
+    request: web::Json<crate::dto::VipCheckRequest>,
+) -> impl Responder {
+    // Parse video ID from request
+    let video_id = match mongodb::bson::oid::ObjectId::parse_str(&request.video_id) {
+        Ok(id) => id,
+        Err(_) => {
+            return HttpResponse::BadRequest().json(crate::dto::VipCheckResponse {
+                success: false,
+                has_access: false,
+                message: "无效的视频ID".to_string(),
+                play_url: None,
+                episode_name: None,
+            });
+        }
+    };
+
+    // Get video from database
+    let vod_collection = db.collection::<Vod>("vods");
+    let video = match vod_collection.find_one(doc! { "_id": video_id }, None).await {
+        Ok(Some(video)) => video,
+        Ok(None) => {
+            return HttpResponse::NotFound().json(crate::dto::VipCheckResponse {
+                success: false,
+                has_access: false,
+                message: "视频不存在".to_string(),
+                play_url: None,
+                episode_name: None,
+            });
+        }
+        Err(e) => {
+            eprintln!("Database error: {}", e);
+            return HttpResponse::InternalServerError().json(crate::dto::VipCheckResponse {
+                success: false,
+                has_access: false,
+                message: "服务器错误".to_string(),
+                play_url: None,
+                episode_name: None,
+            });
+        }
+    };
+
+    // Check if content is public (need_vip = 0)
+    if video.need_vip == 0 {
+        // Public content, grant access without login
+        let mut play_url = None;
+        let mut episode_name = None;
+        
+        // Get first available play URL
+        if let Some(source) = video.vod_play_urls.first() {
+            if let Some(url_info) = source.urls.first() {
+                play_url = Some(url_info.url.clone());
+                episode_name = Some(url_info.name.clone());
+            }
+        }
+        
+        return HttpResponse::Ok().json(crate::dto::VipCheckResponse {
+            success: true,
+            has_access: true,
+            message: "公开内容，访问成功".to_string(),
+            play_url,
+            episode_name,
+        });
+    }
+
+    // For VIP content, check user login status
+    let user = match req.extensions().get::<User>() {
+        Some(user) => user.clone(),
+        None => {
+            return HttpResponse::Ok().json(crate::dto::VipCheckResponse {
+                success: true,
+                has_access: false,
+                message: "请先登录以观看VIP内容".to_string(),
+                play_url: None,
+                episode_name: None,
+            });
+        }
+    };
+
+    // Check VIP access for logged-in user
+    let need_vip = video.need_vip;
+    let mut has_access = false;
+    let mut play_url = None;
+    let mut episode_name = None;
+
+    // VIP content, check user permissions
+    let user_vip_level = user.vip_level.unwrap_or(0);
+    let is_vip_valid = if let Some(vip_end) = user.vip_end_time {
+        vip_end.timestamp_millis() > chrono::Utc::now().timestamp_millis()
+    } else {
+        false
+    };
+
+    if user_vip_level >= need_vip && is_vip_valid {
+        // User has sufficient VIP access
+        has_access = true;
+        // Get first available play URL
+        if let Some(source) = video.vod_play_urls.first() {
+            if let Some(url_info) = source.urls.first() {
+                play_url = Some(url_info.url.clone());
+                episode_name = Some(url_info.name.clone());
+            }
+        }
+    }
+
+    let message = if has_access {
+        "访问权限验证成功".to_string()
+    } else {
+        format!("该内容需要VIP{}权限", need_vip)
+    };
+
+    HttpResponse::Ok().json(crate::dto::VipCheckResponse {
+        success: true,
+        has_access,
+        message,
+        play_url,
+        episode_name,
+    })
 }

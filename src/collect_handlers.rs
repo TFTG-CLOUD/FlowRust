@@ -795,6 +795,7 @@ pub async fn collect_single_video(
             vod_hits_week: Some(0),
             vod_hits_month: Some(0),
             vod_score: Some("0.0".to_string()),
+            need_vip: 0,
             vod_play_urls: parse_play_urls(&vod_data.vod_play_from, &vod_data.vod_play_url),
         };
 
@@ -1104,6 +1105,7 @@ pub async fn collect_video_detail(
             vod_hits_week: Some(0),
             vod_hits_month: Some(0),
             vod_score: Some("0.0".to_string()),
+            need_vip: 0,
             vod_play_urls: parse_play_urls(&vod_data.vod_play_from, &vod_data.vod_play_url),
         };
 

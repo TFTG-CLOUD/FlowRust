@@ -66,6 +66,16 @@ pub async fn init_website_config(db: &Database) -> Result<(), Box<dyn std::error
             config_sort: 5,
             updated_at: DateTime::now(),
         },
+        Config {
+            id: None,
+            config_key: "buy_card".to_string(),
+            config_value: "https://google.com".to_string(),
+            config_desc: Some("购买卡卷的发卡链接".to_string()),
+            config_type: "text".to_string(),
+            config_group: Some("用户设置".to_string()),
+            config_sort: 6,
+            updated_at: DateTime::now(),
+        },
     ];
 
     let mut created_count = 0;
@@ -935,6 +945,7 @@ pub async fn init_test_videos(db: &Database) -> Result<(), Box<dyn std::error::E
             vod_hits_week: Some(0),
             vod_hits_month: Some(0),
             vod_score: Some("9.2".to_string()),
+            need_vip: 0,
             vod_play_urls: vec![PlaySource {
                 source_name: "高清播放".to_string(),
                 urls: vec![PlayUrl {
@@ -965,6 +976,7 @@ pub async fn init_test_videos(db: &Database) -> Result<(), Box<dyn std::error::E
             vod_hits_week: Some(0),
             vod_hits_month: Some(0),
             vod_score: Some("8.8".to_string()),
+            need_vip: 0,
             vod_play_urls: vec![PlaySource {
                 source_name: "高清播放".to_string(),
                 urls: vec![PlayUrl {
@@ -993,6 +1005,7 @@ pub async fn init_test_videos(db: &Database) -> Result<(), Box<dyn std::error::E
             vod_hits_week: Some(0),
             vod_hits_month: Some(0),
             vod_score: Some("8.5".to_string()),
+            need_vip: 0,
             vod_play_urls: vec![PlaySource {
                 source_name: "高清播放".to_string(),
                 urls: vec![PlayUrl {

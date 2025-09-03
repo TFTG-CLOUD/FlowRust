@@ -2,6 +2,7 @@ mod admin_handlers;
 mod api_handlers;
 mod auth;
 mod auth_handlers;
+mod auth_middleware;
 mod collect_handlers;
 mod db;
 mod dto;
@@ -14,17 +15,19 @@ mod template;
 mod web_handlers;
 
 use admin_handlers::{
-    batch_delete_source, batch_delete_vods, create_collection, create_config, create_indexes,
+    admin_cards_page, batch_delete_source, batch_delete_vods, batch_set_vip, create_collection, create_config, create_indexes,
     create_or_update_binding, create_type, create_vod, delete_binding, delete_collection,
-    delete_config, delete_type, delete_vod, get_batch_delete_progress_handler, get_bindings,
-    get_collect_progress, get_collection_binding_status, get_collections, get_config_by_key,
+    delete_cards, delete_config, delete_type, delete_vod, generate_cards, get_batch_delete_progress_handler, get_bindings,
+    get_cards_list, get_collect_progress, get_collection_binding_status, get_collections, get_config_by_key,
     get_configs, get_index_status, get_indexes_data, get_running_batch_delete_tasks_handler,
     get_running_tasks, get_scheduled_task_logs, get_scheduled_task_status, get_statistics,
-    get_types, get_vods_admin, list_indexes, start_collection_collect, start_scheduled_task,
+    search_cards, get_types, get_vods_admin, list_indexes, start_collection_collect, start_scheduled_task,
     stop_batch_delete_task_handler, stop_collect_task, stop_scheduled_task, update_collection,
     update_config, update_scheduled_task_config, update_type, update_vod,
 };
+use web_handlers::{get_buy_card_config, get_user_vip_info, use_card, vip_check_handler};
 use auth_handlers::{get_current_user, login, logout, register};
+use auth_middleware::AuthMiddleware;
 use collect_handlers::{get_collect_categories, get_collect_videos, start_collect_task};
 use site_data::SiteDataManager;
 
@@ -213,6 +216,8 @@ async fn main() -> std::io::Result<()> {
             .wrap(middleware::Compress::default())
             // Static file cache middleware
             .wrap(StaticCacheMiddleware)
+            // Authentication middleware
+            .wrap(AuthMiddleware)
             // Session and Flash Messages Middleware
             .wrap(
                 FlashMessagesFramework::builder(
@@ -296,6 +301,10 @@ async fn main() -> std::io::Result<()> {
             .service(
                 web::resource("/admin/indexes")
                     .route(web::get().to(web_handlers::admin_indexes_page)),
+            )
+            .service(
+                web::resource("/admin/cards")
+                    .route(web::get().to(admin_handlers::admin_cards_page)),
             )
             .service(
                 web::resource("/admin/init-data")
@@ -400,6 +409,10 @@ async fn main() -> std::io::Result<()> {
                             .route(web::delete().to(batch_delete_vods)),
                     )
                     .service(
+                        web::resource("/vods/batch-set-vip")
+                            .route(web::post().to(batch_set_vip)),
+                    )
+                    .service(
                         web::resource("/batch-delete-source")
                             .route(web::post().to(batch_delete_source)),
                     )
@@ -429,6 +442,23 @@ async fn main() -> std::io::Result<()> {
                     .service(web::resource("/indexes/data").route(web::get().to(get_indexes_data)))
                     // Statistics
                     .service(web::resource("/statistics").route(web::get().to(get_statistics)))
+                    // Card Management
+                    .service(
+                        web::resource("/cards")
+                            .route(web::get().to(get_cards_list)),
+                    )
+                    .service(
+                        web::resource("/cards/generate")
+                            .route(web::post().to(generate_cards)),
+                    )
+                    .service(
+                        web::resource("/cards/delete")
+                            .route(web::post().to(delete_cards)),
+                    )
+                    .service(
+                        web::resource("/cards/search")
+                            .route(web::post().to(search_cards)),
+                    )
                     // Scheduled Task Management
                     .service(
                         web::resource("/scheduled-task/status")
@@ -466,6 +496,27 @@ async fn main() -> std::io::Result<()> {
                         web::resource("/progress/{task_id}")
                             .route(web::get().to(get_collect_progress)),
                     ),
+            )
+            // User API routes
+            .service(
+                web::scope("/api/user")
+                    .service(
+                        web::resource("/use-card")
+                            .route(web::post().to(use_card)),
+                    )
+                    .service(
+                        web::resource("/vip-info")
+                            .route(web::get().to(get_user_vip_info)),
+                    )
+                    .service(
+                        web::resource("/vip-check")
+                            .route(web::post().to(vip_check_handler)),
+                    ),
+            )
+            // Config API routes
+            .service(
+                web::resource("/api/config/buy_card")
+                    .route(web::get().to(get_buy_card_config)),
             )
     })
     .bind((

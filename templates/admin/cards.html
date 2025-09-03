@@ -1,0 +1,679 @@
+{% extends "admin/base.html" %}
+
+{% block title %}卡卷管理 - {{ SITENAME | default(value='影视天堂') }}{% endblock %}
+
+{% block scripts %}
+<!-- 卡卷管理页面专用JavaScript -->
+<script>
+    // 页面加载完成后初始化
+    document.addEventListener('DOMContentLoaded', function () {
+        loadCards();
+
+        // 绑定搜索表单提交事件
+        document.getElementById('searchForm').addEventListener('submit', function (e) {
+            e.preventDefault();
+            currentPage = 1;
+            loadCards();
+        });
+
+        // 绑定状态筛选事件
+        document.getElementById('statusFilter').addEventListener('change', function () {
+            currentPage = 1;
+            loadCards();
+        });
+    });
+
+    let currentPage = 1;
+    let currentLimit = 20;
+    let totalCards = 0;
+    let selectedCards = new Set();
+
+    // 加载卡卷列表
+    async function loadCards() {
+        const searchCode = document.getElementById('searchCode').value.trim();
+        const statusFilter = document.getElementById('statusFilter').value;
+
+        try {
+            let url = `/api/admin/cards?page=${currentPage}&limit=${currentLimit}`;
+
+            if (searchCode) {
+                // 如果有搜索关键词，使用搜索接口
+                const response = await fetch('/api/admin/cards/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        code: searchCode,
+                        page: currentPage,
+                        limit: currentLimit
+                    })
+                });
+
+                const result = await response.json();
+                if (result.code === 1) {
+                    // console.log(result.cards);
+                    displayCards(result.cards);
+                    totalCards = result.total;
+                } else {
+                    window.showNotification(result.msg || '搜索失败', 'error');
+                }
+            } else {
+                // 否则使用列表接口
+                const response = await fetch(url);
+                const result = await response.json();
+
+                if (result.code === 1) {
+                    let filteredCards = result.cards;
+                    if (statusFilter) {
+                        filteredCards = result.cards.filter(card =>
+                            statusFilter === 'used' ? card.used : !card.used
+                        );
+                    }
+                    displayCards(filteredCards);
+                    totalCards = filteredCards.length;
+                } else {
+                    window.showNotification(result.msg || '加载卡卷列表失败', 'error');
+                }
+            }
+        } catch (error) {
+            console.error('加载卡卷列表失败:', error);
+            window.showNotification('网络错误，请稍后重试', 'error');
+        }
+    }
+
+    // 显示卡卷列表
+    function displayCards(cards) {
+        const tbody = document.getElementById('cardsList');
+
+        if (cards.length === 0) {
+            tbody.innerHTML = `
+            <tr>
+                <td colspan="9" class="text-center text-gray-500 py-8">暂无卡卷数据</td>
+            </tr>
+        `;
+            return;
+        }
+
+        tbody.innerHTML = cards.map(card => `
+        <tr class="border-b border-gray-200 hover:bg-gray-50">
+            <td class="px-6 py-4">
+                <input type="checkbox" class="card-checkbox w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500" value="${card.id}" onchange="updateSelection()">
+            </td>
+            <td class="px-6 py-4">
+                <div class="flex items-center space-x-2">
+                    <code class="bg-gray-100 px-2 py-1 rounded text-sm font-mono">${card.code}</code>
+                    <button class="text-gray-500 hover:text-blue-600 p-1 rounded" onclick="copyToClipboard('${card.code}')" title="复制">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </td>
+            <td class="px-6 py-4">
+                ${card.used
+                ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">已使用</span>'
+                : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">未使用</span>'
+            }
+            </td>
+            <td class="px-6 py-4 text-sm text-gray-900">VIP ${card.vip_level}</td>
+            <td class="px-6 py-4 text-sm text-gray-900">${card.duration_days} 天</td>
+            <td class="px-6 py-4 text-sm text-gray-900">${formatDate(card.created_at)}</td>
+            <td class="px-6 py-4 text-sm text-gray-900">
+                ${card.used_by
+                ? `${card.used_by.user_name} (${card.used_by.user_nick_name || card.used_by.user_name})`
+                : '-'
+            }
+            </td>
+            <td class="px-6 py-4 text-sm text-gray-900">${card.used_at ? formatDate(card.used_at) : '-'}</td>
+            <td class="px-6 py-4">
+                <button class="text-red-600 hover:text-red-900 p-1 rounded" onclick="deleteCard('${card.id}', '${card.code}')" title="删除">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                    </svg>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+
+        updatePagination();
+    }
+
+    // 更新分页
+    function updatePagination() {
+        const totalPages = Math.ceil(totalCards / currentLimit);
+        const pagination = document.getElementById('pagination');
+
+        if (totalPages <= 1) {
+            pagination.innerHTML = '';
+            return;
+        }
+
+        let paginationHTML = `
+        <div class="flex items-center justify-between">
+            <div class="flex-1 flex justify-between sm:hidden">
+                <button onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''} class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 ${currentPage === 1 ? 'opacity-50 cursor-not-allowed' : ''}">
+                    上一页
+                </button>
+                <button onclick="changePage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''} class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 ${currentPage === totalPages ? 'opacity-50 cursor-not-allowed' : ''}">
+                    下一页
+                </button>
+            </div>
+            <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                <div>
+                    <p class="text-sm text-gray-700">
+                        显示第 <span class="font-medium">${(currentPage - 1) * currentLimit + 1}</span> 到 <span class="font-medium">${Math.min(currentPage * currentLimit, totalCards)}</span> 条，
+                        共 <span class="font-medium">${totalCards}</span> 条记录
+                    </p>
+                </div>
+                <div>
+                    <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+    `;
+
+        if (currentPage > 1) {
+            paginationHTML += `
+                        <button onclick="changePage(${currentPage - 1})" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                            </svg>
+                        </button>
+            `;
+        }
+
+        for (let i = 1; i <= totalPages; i++) {
+            if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+                paginationHTML += `
+                            <button onclick="changePage(${i})" class="relative inline-flex items-center px-4 py-2 border text-sm font-medium ${i === currentPage ? 'z-10 bg-blue-50 border-blue-500 text-blue-600' : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'}">
+                                ${i}
+                            </button>
+                `;
+            } else if (i === currentPage - 3 || i === currentPage + 3) {
+                paginationHTML += `
+                            <span class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+                                ...
+                            </span>
+                `;
+            }
+        }
+
+        if (currentPage < totalPages) {
+            paginationHTML += `
+                        <button onclick="changePage(${currentPage + 1})" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                            </svg>
+                        </button>
+            `;
+        }
+
+        paginationHTML += `
+                    </nav>
+                </div>
+            </div>
+        </div>
+    `;
+
+        pagination.innerHTML = paginationHTML;
+    }
+
+    // 切换页面
+    function changePage(page) {
+        const totalPages = Math.ceil(totalCards / currentLimit);
+        if (page >= 1 && page <= totalPages) {
+            currentPage = page;
+            loadCards();
+        }
+    }
+
+    // 显示生成卡卷模态框
+    function showGenerateModal() {
+        document.getElementById('generateModal').classList.remove('hidden');
+    }
+
+    // 隐藏生成卡卷模态框
+    function hideGenerateModal() {
+        document.getElementById('generateModal').classList.add('hidden');
+    }
+
+    // 生成卡卷
+    async function generateCards() {
+        const count = parseInt(document.getElementById('generateCount').value);
+        const vipLevel = parseInt(document.getElementById('vipLevel').value);
+        const durationDays = parseInt(document.getElementById('durationDays').value);
+
+        if (!count || !vipLevel || !durationDays) {
+            window.showNotification('请填写完整信息', 'warning');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/admin/cards/generate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    count: count,
+                    vip_level: vipLevel,
+                    duration_days: durationDays
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.code === 1) {
+                // 关闭生成模态框
+                hideGenerateModal();
+
+                // 显示结果
+                showGenerateResult(result);
+
+                // 刷新列表
+                loadCards();
+
+                window.showNotification(`成功生成 ${result.generated_count} 张卡卷`, 'success');
+            } else {
+                window.showNotification(result.msg || '生成失败', 'error');
+            }
+        } catch (error) {
+            console.error('生成卡卷失败:', error);
+            window.showNotification('网络错误，请稍后重试', 'error');
+        }
+    }
+
+    // 显示生成结果
+    function showGenerateResult(result) {
+        const resultDiv = document.getElementById('generateResult');
+
+        resultDiv.innerHTML = `
+        <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-green-800">成功生成 ${result.generated_count} 张卡卷</h3>
+                    <div class="mt-2 text-sm text-green-700">
+                        <p>会员等级: VIP ${document.getElementById('vipLevel').value}</p>
+                        <p>会员时长: ${document.getElementById('durationDays').value} 天</p>
+                    </div>
+                    <div class="mt-4 space-y-2">
+                        ${result.cards.map(code => `
+                            <div class="flex space-x-2">
+                                <input type="text" class="flex-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm" value="${code}" readonly>
+                                <button class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50" onclick="copyToClipboard('${code}')">
+                                    复制
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+        document.getElementById('resultModal').classList.remove('hidden');
+    }
+
+    // 隐藏结果模态框
+    function hideResultModal() {
+        document.getElementById('resultModal').classList.add('hidden');
+    }
+
+    // 复制到剪贴板
+    async function copyToClipboard(text) {
+        try {
+            await navigator.clipboard.writeText(text);
+            window.showNotification('已复制到剪贴板', 'success');
+        } catch (err) {
+            console.error('复制失败:', err);
+            window.showNotification('复制失败', 'error');
+        }
+    }
+
+    // 复制所有卡卷
+    function copyAllCards() {
+        const inputs = document.querySelectorAll('#generateResult input[type="text"]');
+        const codes = Array.from(inputs).map(input => input.value);
+        const allCodes = codes.join('\n');
+        copyToClipboard(allCodes);
+    }
+
+    // 删除单个卡卷
+    async function deleteCard(cardId, cardCode) {
+        if (!confirm(`确定要删除卡卷 ${cardCode} 吗？`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/admin/cards/delete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    card_ids: [cardId]
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.code === 1) {
+                window.showNotification(result.msg, 'success');
+                loadCards();
+            } else {
+                window.showNotification(result.msg || '删除失败', 'error');
+            }
+        } catch (error) {
+            console.error('删除卡卷失败:', error);
+            window.showNotification('网络错误，请稍后重试', 'error');
+        }
+    }
+
+    // 批量删除
+    function batchDeleteCards() {
+        if (selectedCards.size === 0) {
+            window.showNotification('请选择要删除的卡卷', 'warning');
+            return;
+        }
+
+        if (!confirm(`确定要删除选中的 ${selectedCards.size} 张卡卷吗？`)) {
+            return;
+        }
+
+        const cardIds = Array.from(selectedCards);
+
+        fetch('/api/admin/cards/delete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                card_ids: cardIds
+            })
+        })
+            .then(response => response.json())
+            .then(result => {
+                if (result.code === 1) {
+                    window.showNotification(result.msg, 'success');
+                    selectedCards.clear();
+                    loadCards();
+                } else {
+                    window.showNotification(result.msg || '删除失败', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('批量删除失败:', error);
+                window.showNotification('网络错误，请稍后重试', 'error');
+            });
+    }
+
+    // 切换全选
+    function toggleSelectAll() {
+        const selectAll = document.getElementById('selectAll');
+        const checkboxes = document.querySelectorAll('.card-checkbox');
+
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = selectAll.checked;
+            if (selectAll.checked) {
+                selectedCards.add(checkbox.value);
+            } else {
+                selectedCards.delete(checkbox.value);
+            }
+        });
+
+        updateBatchDeleteButton();
+    }
+
+    // 更新选择状态
+    function updateSelection() {
+        const checkboxes = document.querySelectorAll('.card-checkbox');
+        selectedCards.clear();
+
+        checkboxes.forEach(checkbox => {
+            if (checkbox.checked) {
+                selectedCards.add(checkbox.value);
+            }
+        });
+
+        // 更新全选状态
+        const selectAll = document.getElementById('selectAll');
+        const checkedCount = selectedCards.size;
+        selectAll.checked = checkedCount > 0 && checkedCount === checkboxes.length;
+        selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+
+        updateBatchDeleteButton();
+    }
+
+    // 更新批量删除按钮状态
+    function updateBatchDeleteButton() {
+        const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+        batchDeleteBtn.style.display = selectedCards.size > 0 ? 'flex' : 'none';
+    }
+
+    // 重置搜索
+    function resetSearch() {
+        document.getElementById('searchCode').value = '';
+        document.getElementById('statusFilter').value = '';
+        currentPage = 1;
+        loadCards();
+    }
+
+    // 格式化日期
+    function formatDate(dateString) {
+        // Extract just the date and time part: "2025-09-03 5:06:01"
+        const match = dateString.match(/(\d{4}-\d{2}-\d{2}) (\d{1,2}:\d{2}:\d{2})/);
+        if (match) {
+            return `${match[1]} ${match[2]}`;
+        }
+        // If parsing fails, return original string
+        return dateString;
+    }
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <!-- 页面标题和操作按钮 -->
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">卡卷管理</h1>
+            <p class="mt-1 text-sm text-gray-500">管理系统中的会员卡卷</p>
+        </div>
+        <button onclick="showGenerateModal()"
+            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6">
+                </path>
+            </svg>
+            生成卡卷
+        </button>
+    </div>
+
+    <!-- 搜索和筛选 -->
+    <div class="bg-white shadow-sm rounded-lg border border-gray-200 mb-6">
+        <div class="p-6">
+            <form id="searchForm" class="grid grid-cols-1 md:grid-cols-12 gap-4">
+                <div class="md:col-span-8">
+                    <div class="flex rounded-md shadow-sm">
+                        <input type="text" id="searchCode" placeholder="输入卡卷代码搜索..."
+                            class="flex-1 min-w-0 block w-full px-3 py-2 rounded-l-md border-gray-300 focus:ring-blue-500 focus:border-blue-500 sm:text-sm border">
+                        <button type="submit"
+                            class="inline-flex items-center px-4 py-2 border border-gray-300 border-l-0 bg-gray-50 text-gray-700 text-sm font-medium hover:bg-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                            搜索
+                        </button>
+                        <button type="button" onclick="resetSearch()"
+                            class="inline-flex items-center px-4 py-2 border border-gray-300 border-l-0 bg-gray-50 text-gray-700 text-sm font-medium rounded-r-md hover:bg-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                            重置
+                        </button>
+                    </div>
+                </div>
+                <div class="md:col-span-4">
+                    <select id="statusFilter"
+                        class="block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                        <option value="">所有状态</option>
+                        <option value="unused">未使用</option>
+                        <option value="used">已使用</option>
+                    </select>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 卡卷列表 -->
+    <div class="bg-white shadow-sm rounded-lg border border-gray-200">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <div class="flex justify-between items-center">
+                <h2 class="text-lg font-medium text-gray-900">卡卷列表</h2>
+                <button id="batchDeleteBtn" onclick="batchDeleteCards()" style="display: none;"
+                    class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                        </path>
+                    </svg>
+                    批量删除
+                </button>
+            </div>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <input type="checkbox" id="selectAll"
+                                class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                                onchange="toggleSelectAll()">
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">卡卷代码
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">会员等级
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">会员时长
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">创建时间
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">使用用户
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">使用时间
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作
+                        </th>
+                    </tr>
+                </thead>
+                <tbody id="cardsList" class="bg-white divide-y divide-gray-200">
+                    <!-- 卡卷数据将通过JavaScript动态加载 -->
+                </tbody>
+            </table>
+        </div>
+        <!-- 分页 -->
+        <div class="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+            <div id="pagination">
+                <!-- 分页控件将通过JavaScript动态生成 -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 生成卡卷模态框 -->
+<div id="generateModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="mt-3">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg leading-6 font-medium text-gray-900">生成卡卷</h3>
+                <button onclick="hideGenerateModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
+                    </svg>
+                </button>
+            </div>
+            <form id="generateForm" class="space-y-4">
+                <div>
+                    <label for="generateCount" class="block text-sm font-medium text-gray-700">生成数量</label>
+                    <input type="number" id="generateCount" min="1" max="1000" value="10" required
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                    <p class="mt-1 text-xs text-gray-500">请输入1-1000之间的数字</p>
+                </div>
+                <div>
+                    <label for="vipLevel" class="block text-sm font-medium text-gray-700">会员等级</label>
+                    <select id="vipLevel" required
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                        <option value="1">VIP 1</option>
+                        <option value="2">VIP 2</option>
+                        <option value="3">VIP 3</option>
+                        <option value="4">VIP 4</option>
+                        <option value="5">VIP 5</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="durationDays" class="block text-sm font-medium text-gray-700">会员时长（天）</label>
+                    <input type="number" id="durationDays" min="1" value="30" required
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+            </form>
+            <div class="flex justify-end space-x-3 mt-6">
+                <button onclick="hideGenerateModal()"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                    取消
+                </button>
+                <button onclick="generateCards()"
+                    class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    生成
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 生成结果模态框 -->
+<div id="resultModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div class="relative top-10 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
+        <div class="mt-3">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg leading-6 font-medium text-gray-900">卡卷生成结果</h3>
+                <button onclick="hideResultModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
+                    </svg>
+                </button>
+            </div>
+            <div id="generateResult">
+                <!-- 生成结果将通过JavaScript动态显示 -->
+            </div>
+            <div class="flex justify-end space-x-3 mt-6">
+                <button onclick="hideResultModal()"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                    关闭
+                </button>
+                <button onclick="copyAllCards()"
+                    class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    复制所有卡卷
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
