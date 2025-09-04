@@ -18,7 +18,7 @@
 <!-- 定时任务控制面板 -->
 <div class="bg-white rounded-lg shadow p-6 mt-6">
     <h3 class="text-lg font-semibold text-gray-900 mb-4">定时任务控制面板</h3>
-    <p class="text-sm text-gray-600 mb-4">定时采集自动执行，按顺序采集所有采集源的当天数据，重启引用之后请重新启动！</p>
+    <p class="text-sm text-gray-600 mb-4">定时采集自动执行，按顺序采集所有采集源的当天数据。请先配置时间间隔，然后点击启动按钮开始任务。</p>
 
     <div class="flex items-center space-x-4 mb-4">
         <div class="flex items-center space-x-2">
@@ -36,7 +36,7 @@
                     d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h1m4 0h1m6-6V7a2 2 0 00-2-2H5a2 2 0 00-2 2v3m0 4v3a2 2 0 002 2h14a2 2 0 002-2v-3M9 7h6">
                 </path>
             </svg>
-            启动定时任务
+            <span id="start-btn-text">启动定时任务</span>
         </button>
         <button id="stop-scheduled-task-btn" onclick="stopScheduledTask()"
             class="flex items-center px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
@@ -1291,9 +1291,11 @@
 
         var isRunning = status.is_running || false;
         var isEnabled = status.enabled || false;
+        var hasConfig = status.interval_hours > 0; // 有配置间隔时间
 
         // 检查元素是否存在，避免null错误
-        if (statusDot && statusText && startBtn && stopBtn) {
+        var startBtnText = document.getElementById('start-btn-text');
+        if (statusDot && statusText && startBtn && stopBtn && startBtnText) {
             if (isRunning) {
                 statusDot.className = 'w-3 h-3 rounded-full bg-green-400 animate-pulse';
                 statusText.textContent = '运行中';
@@ -1304,11 +1306,18 @@
                 statusText.textContent = '已启用';
                 startBtn.style.display = 'none';
                 stopBtn.style.display = 'flex';
-            } else {
-                statusDot.className = 'w-3 h-3 rounded-full bg-red-400';
-                statusText.textContent = '已停止';
+            } else if (hasConfig) {
+                statusDot.className = 'w-3 h-3 rounded-full bg-blue-400';
+                statusText.textContent = '已配置';
                 startBtn.style.display = 'flex';
                 stopBtn.style.display = 'none';
+                startBtnText.textContent = '启动定时任务';
+            } else {
+                statusDot.className = 'w-3 h-3 rounded-full bg-red-400';
+                statusText.textContent = '未配置';
+                startBtn.style.display = 'flex';
+                stopBtn.style.display = 'none';
+                startBtnText.textContent = '先配置再启动';
             }
         }
 
@@ -1395,14 +1404,9 @@
 
     // 启动定时任务
     function startScheduledTask() {
-        if (!confirm('确定要启动定时采集任务吗？启动后每12小时将自动按顺序采集所有采集源的当天数据。')) {
-            return;
-        }
-
-        showToast('正在启动定时采集任务...', 'info');
-
-        fetch('/api/admin/scheduled-task/start', {
-            method: 'POST',
+        // 先检查当前状态
+        fetch('/api/admin/scheduled-task/status', {
+            method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
             }
@@ -1411,15 +1415,46 @@
                 if (response.ok) {
                     return response.json();
                 } else {
-                    throw new Error('启动定时任务失败');
+                    throw new Error('获取状态失败');
                 }
             })
             .then(function (data) {
-                if (data.success) {
-                    showToast(data.message, 'success');
-                    getScheduledTaskStatus(); // 立即更新状态
+                if (data.success && data.data) {
+                    var status = data.data;
+                    if (status.interval_hours === 0) {
+                        showToast('请先配置定时任务时间间隔', 'error');
+                        return;
+                    }
+                    
+                    if (!confirm('确定要启动定时采集任务吗？启动后每' + status.interval_hours + '小时将自动按顺序采集所有采集源的当天数据。')) {
+                        return;
+                    }
+
+                    showToast('正在启动定时采集任务...', 'info');
+
+                    return fetch('/api/admin/scheduled-task/start', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        }
+                    });
                 } else {
-                    showToast(data.message, 'error');
+                    throw new Error('获取状态失败');
+                }
+            })
+            .then(function (response) {
+                if (response) {
+                    return response.json();
+                }
+            })
+            .then(function (data) {
+                if (data) {
+                    if (data.success) {
+                        showToast(data.message, 'success');
+                        getScheduledTaskStatus(); // 立即更新状态
+                    } else {
+                        showToast(data.message, 'error');
+                    }
                 }
             })
             .catch(function (error) {
@@ -1474,8 +1509,6 @@
             return;
         }
 
-        var enabled = confirm('是否启用定时任务？\n确定: 启用\n取消: 禁用');
-
         showToast('正在更新定时任务配置...', 'info');
 
         fetch('/api/admin/scheduled-task/config', {
@@ -1484,7 +1517,7 @@
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                enabled: enabled,
+                enabled: false, // 配置时默认不启用
                 interval_hours: hours
             })
         })
@@ -1497,7 +1530,7 @@
             })
             .then(function (data) {
                 if (data.success) {
-                    showToast(data.message, 'success');
+                    showToast('定时任务配置已更新，请点击"启动定时任务"按钮来启用', 'success');
                     getScheduledTaskStatus(); // 立即更新状态
                 } else {
                     showToast(data.message, 'error');

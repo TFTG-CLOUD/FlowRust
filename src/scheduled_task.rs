@@ -1,10 +1,7 @@
 use mongodb::{Database, Collection as MongoCollection};
 use mongodb::bson::{doc, oid::ObjectId, DateTime};
-use mongodb::options::FindOptions;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tokio::sync::RwLock;
-use std::sync::Arc;
 use chrono::{DateTime as ChronoDateTime};
 use tokio::time::{sleep, interval};
 use futures::TryStreamExt;
@@ -20,6 +17,9 @@ pub struct ScheduledTaskConfig {
     pub next_run: Option<DateTime>,
     pub running_collections: Vec<String>, // 正在运行的采集源ID列表
     pub current_collection_index: usize, // 当前正在执行的采集源索引
+    // 运行时状态字段
+    pub is_running: bool,                // 任务是否正在运行
+    pub current_task_id: Option<String>, // 当前任务ID
     pub created_at: DateTime,
     pub updated_at: DateTime,
 }
@@ -43,8 +43,6 @@ pub struct ScheduledTaskManager {
     db: Database,
     config_collection: MongoCollection<ScheduledTaskConfig>,
     log_collection: MongoCollection<TaskExecutionLog>,
-    is_running: Arc<RwLock<bool>>,
-    current_task: Arc<RwLock<Option<String>>>,
 }
 
 impl ScheduledTaskManager {
@@ -56,36 +54,43 @@ impl ScheduledTaskManager {
             db,
             config_collection,
             log_collection,
-            is_running: Arc::new(RwLock::new(false)),
-            current_task: Arc::new(RwLock::new(None)),
         }
     }
 
     /// 初始化定时任务配置
     pub async fn initialize_config(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // 检查是否已存在配置
-        let existing_config = self.config_collection.find_one(doc! {}, None).await?;
+        let now = DateTime::now();
+        let next_run_millis = now.timestamp_millis() + (12 * 3600 * 1000);
+        let next_run = DateTime::from_millis(next_run_millis);
         
-        if existing_config.is_none() {
-            // 创建默认配置
-            let now = DateTime::now();
-            let next_run_millis = now.timestamp_millis() + (12 * 3600 * 1000);
-            let next_run = DateTime::from_millis(next_run_millis);
+        // 使用 upsert 操作，如果文档不存在则创建，如果存在则更新缺失的字段
+        let update = doc! {
+            "$setOnInsert": {
+                "enabled": false,
+                "interval_hours": 12,
+                "last_run": None::<DateTime>,
+                "next_run": next_run,
+                "running_collections": Vec::<String>::new(),
+                "current_collection_index": 0,
+                "is_running": false,
+                "current_task_id": None::<String>,
+                "created_at": now,
+            },
+            "$set": {
+                "updated_at": now,
+            }
+        };
+        
+        let options = mongodb::options::UpdateOptions::builder()
+            .upsert(true)
+            .build();
             
-            let config = ScheduledTaskConfig {
-                id: None,
-                enabled: false,
-                interval_hours: 12,
-                last_run: None,
-                next_run: Some(next_run),
-                running_collections: Vec::new(),
-                current_collection_index: 0,
-                created_at: now,
-                updated_at: now,
-            };
-            
-            self.config_collection.insert_one(&config, None).await?;
+        let result = self.config_collection.update_one(doc! {}, update, options).await?;
+        
+        if result.upserted_id.is_some() {
             println!("✅ 定时任务配置初始化完成");
+        } else {
+            println!("✅ 定时任务配置已更新");
         }
         
         Ok(())
@@ -100,21 +105,29 @@ impl ScheduledTaskManager {
     /// 更新配置
     pub async fn update_config(&self, enabled: bool, interval_hours: Option<i32>) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
         let now = DateTime::now();
+        let interval = interval_hours.unwrap_or(12);
+        
+        // 不管是否启用，都计算下次运行时间，让用户能看到配置效果
         let next_run = if enabled {
-            let next_run_millis = now.timestamp_millis() + ((interval_hours.unwrap_or(12) as i64) * 3600 * 1000);
+            // 如果启用，从现在开始计算
+            let next_run_millis = now.timestamp_millis() + ((interval as i64) * 3600 * 1000);
             Some(DateTime::from_millis(next_run_millis))
         } else {
-            None
+            // 如果禁用，也计算一个时间，让用户知道配置生效后的运行时间
+            let next_run_millis = now.timestamp_millis() + ((interval as i64) * 3600 * 1000);
+            Some(DateTime::from_millis(next_run_millis))
         };
 
         let update = doc! {
             "$set": {
                 "enabled": enabled,
-                "interval_hours": interval_hours.unwrap_or(12),
+                "interval_hours": interval,
                 "next_run": next_run,
                 "updated_at": now,
                 "running_collections": [],
-                "current_collection_index": 0
+                "current_collection_index": 0,
+                "is_running": false,
+                "current_task_id": None::<String>
             }
         };
 
@@ -124,66 +137,51 @@ impl ScheduledTaskManager {
 
     /// 启动定时任务
     pub async fn start_scheduled_task(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // 检查配置是否已经启用
-        {
-            let is_running = self.is_running.read().await;
-            if let Some(config) = self.get_config().await? {
-                if config.enabled && *is_running {
-                    return Ok(());
-                }
+        // 检查配置是否已经启用且正在运行
+        if let Some(config) = self.get_config().await? {
+            if config.enabled && config.is_running {
+                println!("⚠️ 定时任务已在运行中");
+                return Ok(());
             }
         }
 
-        // 步骤1：立即设置当前任务状态，确保前端能立即看到"运行中"状态
-        println!("🔍 步骤1：立即设置任务运行状态...");
+        // 步骤1：生成任务ID并立即设置到数据库
+        println!("🔍 步骤1：设置任务运行状态到数据库...");
         let immediate_task_id = ObjectId::new().to_hex();
-        {
-            let mut current_task = self.current_task.write().await;
-            *current_task = Some(immediate_task_id.clone());
+        let task_id_clone = immediate_task_id.clone();
+        let now = DateTime::now();
+        
+        let update = doc! {
+            "$set": {
+                "enabled": true,
+                "is_running": true,
+                "current_task_id": task_id_clone,
+                "updated_at": now
+            }
+        };
+        
+        let result = self.config_collection.update_one(doc! {}, update, None).await?;
+        if result.modified_count == 0 {
+            println!("❌ 更新任务状态失败");
+            return Err("更新任务状态失败".into());
         }
         
-        // 步骤2：更新配置为启用状态
-        println!("🔍 步骤2：更新配置为启用状态...");
-        self.update_config(true, None).await?;
-        
-        // 步骤3：设置内存运行状态
-        println!("🔍 步骤3：设置内存运行状态...");
-        {
-            let mut is_running = self.is_running.write().await;
-            *is_running = true;
-        }
         println!("🚀 定时采集任务已启动");
 
-        // 步骤4：启动定时任务循环（异步执行，不阻塞当前流程）
-        println!("🔍 步骤4：启动定时任务循环...");
+        // 步骤2：启动定时任务循环（异步执行，不阻塞当前流程）
+        println!("🔍 步骤2：启动定时任务循环...");
         let db = self.db.clone();
-        let is_running_clone = self.is_running.clone();
-        let current_task_clone = self.current_task.clone();
         
         tokio::spawn(async move {
             let manager = ScheduledTaskManager::new(db);
-            manager.run_scheduled_task_loop(is_running_clone, current_task_clone).await;
+            manager.run_scheduled_task_loop().await;
         });
-
-        // 步骤5：验证状态更新（确保前端能看到运行状态）
-        println!("🔍 步骤5：验证状态更新...");
-        let task_is_set = {
-            let current_task = self.current_task.read().await;
-            current_task.is_some()
-        };
-        
-        let is_running_status = {
-            let is_running_guard = self.is_running.read().await;
-            *is_running_guard
-        };
-        println!("🔍 任务状态设置结果: {}, 内存运行状态: {}", task_is_set, is_running_status);
-        println!("✅ 步骤5验证完成，继续执行后续步骤...");
 
         // 立即执行一次采集任务
         println!("🔄 立即执行一次采集任务...");
         
-        // 步骤6：检查是否有启用的采集源
-        println!("🔍 步骤6：检查启用的采集源...");
+        // 步骤3：检查是否有启用的采集源
+        println!("🔍 步骤3：检查启用的采集源...");
         let collections_collection = self.db.collection::<Collection>("collections");
         let filter = doc! { "collect_status": 1 };
         let enabled_collections_count = match collections_collection.count_documents(filter.clone(), None).await {
@@ -193,21 +191,20 @@ impl ScheduledTaskManager {
             }
             Err(e) => {
                 eprintln!("❌ 查询采集源失败: {}", e);
-                // 即使查询失败，也要清除任务状态
-                *self.current_task.write().await = None;
+                // 清除任务状态
+                self.clear_task_status().await?;
                 return Ok(());
             }
         };
         
         if enabled_collections_count == 0 {
             println!("⚠️ 没有启用的采集源，跳过立即执行");
-            // 清除任务状态
-            *self.current_task.write().await = None;
+            self.clear_task_status().await?;
             return Ok(());
         }
         
-        // 步骤7：获取配置
-        println!("🔍 步骤7：获取定时任务配置...");
+        // 步骤4：获取配置
+        println!("🔍 步骤4：获取定时任务配置...");
         let config = match self.get_config().await {
             Ok(Some(config)) => {
                 println!("🔍 获取配置成功，启用状态: {}", config.enabled);
@@ -215,21 +212,19 @@ impl ScheduledTaskManager {
             }
             Ok(None) => {
                 println!("⚠️ 没有找到定时任务配置");
-                // 清除任务状态
-                *self.current_task.write().await = None;
+                self.clear_task_status().await?;
                 return Ok(());
             }
             Err(e) => {
                 eprintln!("❌ 获取配置失败: {}", e);
-                // 清除任务状态
-                *self.current_task.write().await = None;
+                self.clear_task_status().await?;
                 return Ok(());
             }
         };
         
-        // 步骤8：执行立即采集任务
-        println!("🔍 步骤8：执行立即采集任务...");
-        match self.execute_immediate_collection(&config).await {
+        // 步骤5：执行立即采集任务
+        println!("🔍 步骤5：执行立即采集任务...");
+        match self.execute_immediate_collection(&config, &immediate_task_id).await {
             Ok(_) => {
                 println!("✅ 立即执行采集任务完成");
             }
@@ -239,61 +234,50 @@ impl ScheduledTaskManager {
             }
         }
         
-        // 步骤9：清除当前任务状态
-        println!("🔍 步骤9：清除任务运行状态...");
-        *self.current_task.write().await = None;
+        // 步骤6：清除当前任务状态（但保持定时任务运行）
+        println!("🔍 步骤6：清除立即执行任务状态...");
+        self.clear_current_task().await?;
 
         Ok(())
     }
 
     /// 停止定时任务
     pub async fn stop_scheduled_task(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let mut is_running = self.is_running.write().await;
-        
-        // 检查配置是否启用，如果配置已禁用则只需要更新内存状态
+        // 检查配置是否已经停止
         if let Some(config) = self.get_config().await? {
-            if !config.enabled {
-                *is_running = false;
+            if !config.enabled && !config.is_running {
+                println!("⚠️ 定时任务已停止");
                 return Ok(());
             }
         }
         
-        // 无论内存状态如何，都要更新配置为禁用状态
-        self.update_config(false, None).await?;
+        // 更新配置为禁用状态并清除运行状态
+        self.clear_task_status().await?;
         
-        // 更新内存状态
-        *is_running = false;
         println!("🛑 定时采集任务已停止");
-
         Ok(())
     }
 
     /// 定时任务主循环
-    async fn run_scheduled_task_loop(
-        &self,
-        is_running: Arc<RwLock<bool>>,
-        current_task: Arc<RwLock<Option<String>>>,
-    ) {
+    async fn run_scheduled_task_loop(&self) {
         let mut interval_timer = interval(tokio::time::Duration::from_secs(60)); // 每分钟检查一次
 
         loop {
             // 检查是否应该停止
-            if !*is_running.read().await {
-                break;
-            }
-
-            // 检查是否到了执行时间
             if let Ok(Some(config)) = self.get_config().await {
-                if config.enabled {
-                    if let Some(next_run) = config.next_run {
-                        let now = ChronoDateTime::from_timestamp(DateTime::now().timestamp_millis() as i64 / 1000, 0).unwrap();
-                        let next_run_time = ChronoDateTime::from_timestamp(next_run.timestamp_millis() as i64 / 1000, 0).unwrap();
-                        
-                        if now >= next_run_time {
-                            // 执行采集任务
-                            if let Err(e) = self.execute_scheduled_collection(&config).await {
-                                eprintln!("❌ 执行定时采集任务失败: {}", e);
-                            }
+                if !config.enabled || !config.is_running {
+                    break;
+                }
+
+                // 检查是否到了执行时间
+                if let Some(next_run) = config.next_run {
+                    let now = ChronoDateTime::from_timestamp(DateTime::now().timestamp_millis() as i64 / 1000, 0).unwrap();
+                    let next_run_time = ChronoDateTime::from_timestamp(next_run.timestamp_millis() as i64 / 1000, 0).unwrap();
+                    
+                    if now >= next_run_time {
+                        // 执行采集任务
+                        if let Err(e) = self.execute_scheduled_collection(&config).await {
+                            eprintln!("❌ 执行定时采集任务失败: {}", e);
                         }
                     }
                 }
@@ -304,19 +288,17 @@ impl ScheduledTaskManager {
     }
 
     /// 执行立即采集任务（跳过运行状态检查）
-    async fn execute_immediate_collection(&self, config: &ScheduledTaskConfig) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn execute_immediate_collection(&self, config: &ScheduledTaskConfig, task_id: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         println!("🔄 开始执行立即采集任务");
 
         // 确保任务状态已设置
-        let current_task = self.current_task.read().await;
-        if current_task.is_none() {
-            println!("⚠️ 警告：当前任务状态未设置，设置默认任务ID");
-            drop(current_task);
-            let default_task_id = ObjectId::new().to_hex();
-            *self.current_task.write().await = Some(default_task_id);
-        } else {
-            drop(current_task);
-        }
+        let update = doc! {
+            "$set": {
+                "current_task_id": task_id,
+                "updated_at": DateTime::now()
+            }
+        };
+        self.config_collection.update_one(doc! {}, update, None).await?;
 
         // 获取所有启用的采集源
         let collections_collection = self.db.collection::<Collection>("collections");
@@ -359,19 +341,17 @@ impl ScheduledTaskManager {
 
             self.log_collection.insert_one(&log_entry, None).await?;
             
-            // 检查是否已有任务ID，如果有则使用已有的（避免覆盖立即执行的任务ID）
-            let current_task = self.current_task.read().await;
-            let final_task_id = if current_task.is_some() {
-                current_task.as_ref().unwrap().clone()
-            } else {
-                task_id.clone()
-            };
-            drop(current_task); // 释放读锁
+            // 使用当前采集任务ID
+            let final_task_id = task_id.to_string();
             
-            // 如果没有任务ID，则设置一个
-            if self.current_task.read().await.is_none() {
-                *self.current_task.write().await = Some(task_id.clone());
-            }
+            // 更新数据库中的当前任务ID
+            let update = doc! {
+                "$set": {
+                    "current_task_id": final_task_id.clone(),
+                    "updated_at": DateTime::now()
+                }
+            };
+            self.config_collection.update_one(doc! {}, update, None).await?;
 
             // 执行采集（这里需要调用实际的采集逻辑）
             match self.collect_videos_from_source(&collection).await {
@@ -410,14 +390,14 @@ impl ScheduledTaskManager {
                 }
             }
 
-            // 只有当前任务ID匹配时才清除（避免清除立即执行的任务ID）
-            let current_task = self.current_task.read().await;
-            if let Some(ref current_id) = *current_task {
-                if current_id == &task_id {
-                    drop(current_task);
-                    *self.current_task.write().await = None;
+            // 清除当前任务ID
+            let update = doc! {
+                "$set": {
+                    "current_task_id": None::<String>,
+                    "updated_at": DateTime::now()
                 }
-            }
+            };
+            self.config_collection.update_one(doc! {}, update, None).await?;
 
             // 采集间隔，避免请求过于频繁
             sleep(tokio::time::Duration::from_secs(5)).await;
@@ -457,9 +437,11 @@ impl ScheduledTaskManager {
 
         for (index, collection) in collections.iter().enumerate() {
             // 检查任务是否还在运行
-            if !*self.is_running.read().await {
-                println!("⏹️ 定时任务已停止，中断采集");
-                break;
+            if let Ok(Some(config)) = self.get_config().await {
+                if !config.is_running {
+                    println!("⏹️ 定时任务已停止，中断采集");
+                    break;
+                }
             }
 
             println!("📥 开始采集第 {}/{} 个采集源: {}", index + 1, total_collections, collection.collect_name);
@@ -481,19 +463,17 @@ impl ScheduledTaskManager {
 
             self.log_collection.insert_one(&log_entry, None).await?;
             
-            // 检查是否已有任务ID，如果有则使用已有的（避免覆盖立即执行的任务ID）
-            let current_task = self.current_task.read().await;
-            let final_task_id = if current_task.is_some() {
-                current_task.as_ref().unwrap().clone()
-            } else {
-                task_id.clone()
-            };
-            drop(current_task); // 释放读锁
+            // 使用当前采集任务ID
+            let final_task_id = task_id.to_string();
             
-            // 如果没有任务ID，则设置一个
-            if self.current_task.read().await.is_none() {
-                *self.current_task.write().await = Some(task_id.clone());
-            }
+            // 更新数据库中的当前任务ID
+            let update = doc! {
+                "$set": {
+                    "current_task_id": final_task_id.clone(),
+                    "updated_at": DateTime::now()
+                }
+            };
+            self.config_collection.update_one(doc! {}, update, None).await?;
 
             // 执行采集（这里需要调用实际的采集逻辑）
             match self.collect_videos_from_source(&collection).await {
@@ -532,14 +512,14 @@ impl ScheduledTaskManager {
                 }
             }
 
-            // 只有当前任务ID匹配时才清除（避免清除立即执行的任务ID）
-            let current_task = self.current_task.read().await;
-            if let Some(ref current_id) = *current_task {
-                if current_id == &task_id {
-                    drop(current_task);
-                    *self.current_task.write().await = None;
+            // 清除当前任务ID
+            let update = doc! {
+                "$set": {
+                    "current_task_id": None::<String>,
+                    "updated_at": DateTime::now()
                 }
-            }
+            };
+            self.config_collection.update_one(doc! {}, update, None).await?;
 
             // 采集间隔，避免请求过于频繁
             sleep(tokio::time::Duration::from_secs(5)).await;
@@ -600,6 +580,34 @@ impl ScheduledTaskManager {
         }
     }
 
+    /// 清除任务状态
+    async fn clear_task_status(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let now = DateTime::now();
+        let update = doc! {
+            "$set": {
+                "enabled": false,
+                "is_running": false,
+                "current_task_id": None::<String>,
+                "updated_at": now
+            }
+        };
+        self.config_collection.update_one(doc! {}, update, None).await?;
+        Ok(())
+    }
+
+    /// 清除当前任务ID（但保持任务运行状态）
+    async fn clear_current_task(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let now = DateTime::now();
+        let update = doc! {
+            "$set": {
+                "current_task_id": None::<String>,
+                "updated_at": now
+            }
+        };
+        self.config_collection.update_one(doc! {}, update, None).await?;
+        Ok(())
+    }
+
     /// 获取任务状态
     pub async fn get_task_status(&self) -> Result<HashMap<String, serde_json::Value>, Box<dyn std::error::Error + Send + Sync>> {
         let mut status = HashMap::new();
@@ -619,31 +627,28 @@ impl ScheduledTaskManager {
             false
         };
 
-        // 获取当前运行状态：检查配置状态、内存状态和当前任务
-        let memory_is_running = *self.is_running.read().await;
-        let current_task = self.current_task.read().await;
-        let has_active_task = current_task.is_some();
-        drop(current_task); // 释放读锁
-        
-        // 判断任务是否正在运行：
-        // 1. 配置已启用
-        // 2. 内存状态为运行中 或者 有当前任务（说明正在立即执行）
-        let is_running = config_enabled && (memory_is_running || has_active_task);
+        // 获取当前运行状态：从数据库配置中获取
+        let is_running = if let Some(config) = self.get_config().await? {
+            config.is_running
+        } else {
+            false
+        };
         status.insert("is_running".to_string(), serde_json::Value::Bool(is_running));
         
         // 添加调试信息
-        println!("🔍 状态检查 - 配置启用: {}, 内存运行: {}, 有活跃任务: {}, 最终状态: {}", config_enabled, memory_is_running, has_active_task, is_running);
+        println!("🔍 状态检查 - 配置启用: {}, 数据库运行状态: {}", config_enabled, is_running);
         
-        // 获取当前任务
-        let current_task = self.current_task.read().await;
-        if let Some(task_id) = current_task.as_ref() {
-            status.insert("current_task_id".to_string(), serde_json::Value::String(task_id.clone()));
-            
-            // 获取任务详情
-            if let Some(log) = self.log_collection.find_one(doc! { "task_id": task_id }, None).await? {
-                status.insert("current_collection".to_string(), serde_json::Value::String(log.collection_name));
-                status.insert("current_status".to_string(), serde_json::Value::String(log.status));
-                status.insert("task_started_at".to_string(), serde_json::Value::String(format!("{}", log.started_at.timestamp_millis())));
+        // 获取当前任务ID
+        if let Some(config) = self.get_config().await? {
+            if let Some(task_id) = config.current_task_id {
+                status.insert("current_task_id".to_string(), serde_json::Value::String(task_id.clone()));
+                
+                // 获取任务详情
+                if let Some(log) = self.log_collection.find_one(doc! { "task_id": &task_id }, None).await? {
+                    status.insert("current_collection".to_string(), serde_json::Value::String(log.collection_name));
+                    status.insert("current_status".to_string(), serde_json::Value::String(log.status));
+                    status.insert("task_started_at".to_string(), serde_json::Value::String(format!("{}", log.started_at.timestamp_millis())));
+                }
             }
         }
 
