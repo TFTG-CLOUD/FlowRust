@@ -335,3 +335,64 @@ pub struct VipCheckResponse {
     pub play_url: Option<String>,
     pub episode_name: Option<String>,
 }
+
+// User management DTOs
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UserListResponse {
+    pub code: i32,
+    pub msg: String,
+    pub users: Vec<UserAdminInfo>,
+    pub total: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UserAdminInfo {
+    #[serde(rename = "_id")]
+    pub id: String,
+    pub user_name: String,
+    pub user_nick_name: Option<String>,
+    pub user_email: String,
+    pub vip_level: i32,
+    pub vip_end_time: Option<String>,
+    pub created_at: String,
+    pub last_login: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateUserRequest {
+    pub user_name: String,
+    pub user_email: String,
+    pub user_nick_name: Option<String>,
+    pub password: String,
+    pub vip_level: Option<i32>,
+    pub vip_duration_days: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateUserRequest {
+    pub user_id: String,
+    pub user_name: Option<String>,
+    pub user_email: Option<String>,
+    pub user_nick_name: Option<String>,
+    pub password: Option<String>,
+    pub vip_level: Option<i32>,
+    pub vip_duration_days: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeleteUserRequest {
+    pub user_ids: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SearchUserRequest {
+    pub query: String,
+    pub page: Option<i32>,
+    pub limit: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UserPageParams {
+    pub page: Option<i32>,
+    pub limit: Option<i32>,
+}

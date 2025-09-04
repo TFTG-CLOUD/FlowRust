@@ -1,5 +1,7 @@
 use actix_session::Session;
 use actix_web::{web, HttpResponse, Responder};
+use bcrypt;
+use chrono;
 use futures::stream::TryStreamExt;
 use mongodb::{
     bson::doc,
@@ -8,10 +10,12 @@ use mongodb::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use uuid;
 
 use crate::dto::{
     CardInfo, CardListResponse, CardPageParams, DeleteCardRequest, GenerateCardRequest,
-    GenerateCardResponse, SearchCardRequest, UserInfo,
+    GenerateCardResponse, SearchCardRequest, UserInfo, UserAdminInfo, UserListResponse,
+    CreateUserRequest, UpdateUserRequest, DeleteUserRequest, SearchUserRequest, UserPageParams,
 };
 use crate::index_manager::IndexManager;
 use crate::models::{Binding, Card, Collection, Config, Type, User, Vod};
@@ -2417,4 +2421,543 @@ pub async fn batch_set_vip(
             }))
         }
     }
+}
+
+// User management functions
+pub async fn admin_users_page(
+    session: Session,
+    db: web::Data<Database>,
+    site_data_manager: web::Data<crate::site_data::SiteDataManager>,
+) -> impl Responder {
+    if let Err(response) = check_auth(&session) {
+        return response;
+    }
+
+    match crate::web_handlers::with_site_data(
+        db.clone(),
+        site_data_manager.clone(),
+        |mut context, _site_data| async move {
+            context.insert("page_title", "用户管理");
+
+            TERA.render("admin/users.html", &context).map_err(|e| {
+                crate::web_handlers::handle_template_rendering_error(
+                    "admin/users.html",
+                    &e,
+                    Some("Admin user management page"),
+                    Some("Admin access required"),
+                );
+                Box::new(e) as Box<dyn std::error::Error>
+            })
+        },
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "error": format!("Template error: {}", e)
+        })),
+    }
+}
+
+pub async fn get_users_list(
+    session: Session,
+    db: web::Data<Database>,
+    query: web::Query<crate::dto::UserPageParams>,
+) -> impl Responder {
+    if let Err(response) = check_auth(&session) {
+        return response;
+    }
+
+    let page = query.page.unwrap_or(1);
+    let limit = query.limit.unwrap_or(20);
+    let skip = (page - 1) * limit;
+
+    let user_collection = db.collection::<User>("users");
+    
+    // Get total count
+    let total = match user_collection.count_documents(None, None).await {
+        Ok(count) => count,
+        Err(e) => {
+            eprintln!("Database error when counting users: {}", e);
+            return HttpResponse::InternalServerError().json(crate::dto::UserListResponse {
+                code: 500,
+                msg: "服务器错误".to_string(),
+                users: vec![],
+                total: 0,
+            });
+        }
+    };
+
+    // Get users with pagination
+    let find_options = FindOptions::builder()
+        .skip(skip as u64)
+        .limit(limit as i64)
+        .sort(doc! { "created_at": -1 })
+        .build();
+
+    let users: Vec<User> = match user_collection.find(None, find_options).await {
+        Ok(cursor) => cursor.try_collect().await.unwrap_or_else(|_| vec![]),
+        Err(e) => {
+            eprintln!("Database error when fetching users: {}", e);
+            return HttpResponse::InternalServerError().json(crate::dto::UserListResponse {
+                code: 500,
+                msg: "服务器错误".to_string(),
+                users: vec![],
+                total: 0,
+            });
+        }
+    };
+
+    // Convert to UserAdminInfo format
+    let user_infos: Vec<crate::dto::UserAdminInfo> = users
+        .into_iter()
+        .map(|user| crate::dto::UserAdminInfo {
+            id: user.id.map_or_else(|| "".to_string(), |id| id.to_string()),
+            user_name: user.user_name,
+            user_nick_name: user.user_nick_name,
+            user_email: user.user_email.unwrap_or_else(|| "".to_string()),
+            vip_level: user.vip_level.unwrap_or(0),
+            vip_end_time: user.vip_end_time.map(|end| end.to_string()),
+            created_at: user.created_at.map_or_else(|| "".to_string(), |dt| dt.to_string()),
+            last_login: None,
+        })
+        .collect();
+
+    HttpResponse::Ok().json(crate::dto::UserListResponse {
+        code: 200,
+        msg: "获取成功".to_string(),
+        users: user_infos,
+        total: total as i64,
+    })
+}
+
+pub async fn create_user(
+    session: Session,
+    db: web::Data<Database>,
+    request: web::Json<crate::dto::CreateUserRequest>,
+) -> impl Responder {
+    if let Err(response) = check_auth(&session) {
+        return response;
+    }
+
+    // Check if username already exists
+    let user_collection = db.collection::<User>("users");
+    let existing_user = user_collection
+        .find_one(doc! { "user_name": &request.user_name }, None)
+        .await;
+
+    if let Ok(Some(_)) = existing_user {
+        return HttpResponse::BadRequest().json(json!({
+            "success": false,
+            "message": "用户名已存在"
+        }));
+    }
+
+    // Check if email already exists
+    let existing_email = user_collection
+        .find_one(doc! { "user_email": &request.user_email }, None)
+        .await;
+
+    if let Ok(Some(_)) = existing_email {
+        return HttpResponse::BadRequest().json(json!({
+            "success": false,
+            "message": "邮箱已存在"
+        }));
+    }
+
+    // Hash password
+    let hashed_password = match bcrypt::hash(&request.password, 12) {
+        Ok(hash) => hash,
+        Err(e) => {
+            eprintln!("Password hashing error: {}", e);
+            return HttpResponse::InternalServerError().json(json!({
+                "success": false,
+                "message": "服务器错误"
+            }));
+        }
+    };
+
+    // Calculate VIP end time if provided
+    let vip_end_time = if let (Some(vip_level), Some(duration_days)) = (request.vip_level, request.vip_duration_days) {
+        if vip_level > 0 && duration_days > 0 {
+            let duration_ms = (duration_days as i64) * 24 * 60 * 60 * 1000;
+            Some(mongodb::bson::DateTime::from_millis(
+                chrono::Utc::now().timestamp_millis() + duration_ms
+            ))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // Create new user
+    let new_user = User {
+        id: Some(mongodb::bson::oid::ObjectId::new()),
+        user_name: request.user_name.clone(),
+        user_pwd: hashed_password,
+        group_id: 1, // Default group ID
+        user_status: 1, // Active status
+        user_nick_name: request.user_nick_name.clone(),
+        user_email: Some(request.user_email.clone()),
+        user_phone: None,
+        user_portrait: None,
+        user_points: 0, // Default points
+        user_end_time: mongodb::bson::DateTime::now(), // Default end time
+        vip_level: Some(request.vip_level.unwrap_or(0)),
+        vip_end_time,
+        created_at: Some(mongodb::bson::DateTime::now()),
+    };
+
+    match user_collection.insert_one(new_user, None).await {
+        Ok(_) => HttpResponse::Ok().json(json!({
+            "success": true,
+            "message": "用户创建成功"
+        })),
+        Err(e) => {
+            eprintln!("Database error when creating user: {}", e);
+            HttpResponse::InternalServerError().json(json!({
+                "success": false,
+                "message": "服务器错误"
+            }))
+        }
+    }
+}
+
+pub async fn update_user(
+    session: Session,
+    db: web::Data<Database>,
+    request: web::Json<crate::dto::UpdateUserRequest>,
+) -> impl Responder {
+    if let Err(response) = check_auth(&session) {
+        return response;
+    }
+
+    // Parse user ID
+    let user_id = match mongodb::bson::oid::ObjectId::parse_str(&request.user_id) {
+        Ok(id) => id,
+        Err(_) => {
+            return HttpResponse::BadRequest().json(json!({
+                "success": false,
+                "message": "无效的用户ID"
+            }));
+        }
+    };
+
+    let user_collection = db.collection::<User>("users");
+    
+    // Check if user exists
+    let existing_user = match user_collection.find_one(doc! { "_id": user_id }, None).await {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            return HttpResponse::NotFound().json(json!({
+                "success": false,
+                "message": "用户不存在"
+            }));
+        }
+        Err(e) => {
+            eprintln!("Database error when finding user: {}", e);
+            return HttpResponse::InternalServerError().json(json!({
+                "success": false,
+                "message": "服务器错误"
+            }));
+        }
+    };
+
+    // Build update document
+    let mut update_doc = doc! {};
+
+    if let Some(user_name) = &request.user_name {
+        // Check if username already exists (excluding current user)
+        if let Ok(Some(_)) = user_collection
+            .find_one(doc! { "user_name": user_name, "_id": { "$ne": user_id } }, None)
+            .await
+        {
+            return HttpResponse::BadRequest().json(json!({
+                "success": false,
+                "message": "用户名已存在"
+            }));
+        }
+        update_doc.insert("user_name", user_name);
+    }
+
+    if let Some(user_email) = &request.user_email {
+        // Check if email already exists (excluding current user)
+        if let Ok(Some(_)) = user_collection
+            .find_one(doc! { "user_email": user_email, "_id": { "$ne": user_id } }, None)
+            .await
+        {
+            return HttpResponse::BadRequest().json(json!({
+                "success": false,
+                "message": "邮箱已存在"
+            }));
+        }
+        update_doc.insert("user_email", user_email);
+    }
+
+    if let Some(user_nick_name) = &request.user_nick_name {
+        update_doc.insert("user_nick_name", user_nick_name);
+    }
+
+    if let Some(password) = &request.password {
+        if !password.is_empty() {
+            let hashed_password = match bcrypt::hash(password, 12) {
+                Ok(hash) => hash,
+                Err(e) => {
+                    eprintln!("Password hashing error: {}", e);
+                    return HttpResponse::InternalServerError().json(json!({
+                        "success": false,
+                        "message": "服务器错误"
+                    }));
+                }
+            };
+            update_doc.insert("user_password", hashed_password);
+        }
+    }
+
+    if let Some(vip_level) = request.vip_level {
+        update_doc.insert("vip_level", vip_level);
+    }
+
+    // Handle VIP duration
+    if let (Some(vip_level), Some(duration_days)) = (request.vip_level, request.vip_duration_days) {
+        if vip_level > 0 && duration_days > 0 {
+            let duration_ms = (duration_days as i64) * 24 * 60 * 60 * 1000;
+            let current_vip_end = existing_user.vip_end_time
+                .map(|end| end.timestamp_millis())
+                .unwrap_or(0);
+            let current_time = chrono::Utc::now().timestamp_millis();
+            
+            let new_vip_end = if current_vip_end > current_time && existing_user.vip_level.unwrap_or(0) == vip_level {
+                // Same VIP level, extend current duration
+                current_vip_end + duration_ms
+            } else {
+                // Different VIP level or not VIP, reset duration
+                current_time + duration_ms
+            };
+            
+            update_doc.insert("vip_end_time", mongodb::bson::DateTime::from_millis(new_vip_end));
+        } else if vip_level == 0 {
+            // Remove VIP status
+            update_doc.insert("vip_end_time", None::<mongodb::bson::DateTime>);
+        }
+    }
+
+    if update_doc.is_empty() {
+        return HttpResponse::BadRequest().json(json!({
+            "success": false,
+            "message": "没有提供更新内容"
+        }));
+    }
+
+    match user_collection
+        .update_one(doc! { "_id": user_id }, doc! { "$set": update_doc }, None)
+        .await
+    {
+        Ok(_) => HttpResponse::Ok().json(json!({
+            "success": true,
+            "message": "用户更新成功"
+        })),
+        Err(e) => {
+            eprintln!("Database error when updating user: {}", e);
+            HttpResponse::InternalServerError().json(json!({
+                "success": false,
+                "message": "服务器错误"
+            }))
+        }
+    }
+}
+
+pub async fn delete_users(
+    session: Session,
+    db: web::Data<Database>,
+    request: web::Json<crate::dto::DeleteUserRequest>,
+) -> impl Responder {
+    if let Err(response) = check_auth(&session) {
+        return response;
+    }
+
+    // Convert string IDs to ObjectId
+    let mut object_ids = Vec::new();
+    for user_id_str in &request.user_ids {
+        match mongodb::bson::oid::ObjectId::parse_str(user_id_str) {
+            Ok(id) => object_ids.push(id),
+            Err(_) => {
+                return HttpResponse::BadRequest().json(json!({
+                    "success": false,
+                    "message": format!("无效的用户ID: {}", user_id_str)
+                }));
+            }
+        }
+    }
+
+    if object_ids.is_empty() {
+        return HttpResponse::BadRequest().json(json!({
+            "success": false,
+            "message": "没有提供有效的用户ID"
+        }));
+    }
+
+    let user_collection = db.collection::<User>("users");
+    
+    match user_collection
+        .delete_many(doc! { "_id": { "$in": object_ids } }, None)
+        .await
+    {
+        Ok(result) => HttpResponse::Ok().json(json!({
+            "success": true,
+            "message": format!("成功删除 {} 个用户", result.deleted_count),
+            "deleted_count": result.deleted_count
+        })),
+        Err(e) => {
+            eprintln!("Database error when deleting users: {}", e);
+            HttpResponse::InternalServerError().json(json!({
+                "success": false,
+                "message": "服务器错误"
+            }))
+        }
+    }
+}
+
+// Get single user by ID
+pub async fn get_user_by_id(
+    session: Session,
+    db: web::Data<Database>,
+    user_id: web::Path<String>,
+) -> impl Responder {
+    if let Err(response) = check_auth(&session) {
+        return response;
+    }
+
+    // Parse user ID
+    let object_id = match mongodb::bson::oid::ObjectId::parse_str(&**user_id) {
+        Ok(id) => id,
+        Err(_) => {
+            return HttpResponse::BadRequest().json(json!({
+                "success": false,
+                "message": "无效的用户ID格式"
+            }));
+        }
+    };
+
+    let user_collection = db.collection::<User>("users");
+    
+    match user_collection.find_one(
+        mongodb::bson::doc! {
+            "_id": object_id
+        },
+        None,
+    ).await {
+        Ok(Some(user)) => {
+            HttpResponse::Ok().json(json!({
+                "success": true,
+                "user": {
+                    "_id": user.id.map_or_else(|| "".to_string(), |id| id.to_string()),
+                    "user_name": user.user_name,
+                    "user_nick_name": user.user_nick_name,
+                    "user_email": user.user_email.unwrap_or_else(|| "".to_string()),
+                    "vip_level": user.vip_level.unwrap_or(0),
+                    "vip_end_time": user.vip_end_time.map(|dt| dt.to_string()),
+                    "created_at": user.created_at.map_or_else(|| "".to_string(), |dt| dt.to_string()),
+                    "group_id": user.group_id,
+                    "user_status": user.user_status,
+                    "user_points": user.user_points
+                }
+            }))
+        }
+        Ok(None) => {
+            HttpResponse::NotFound().json(json!({
+                "success": false,
+                "message": "用户不存在"
+            }))
+        }
+        Err(e) => {
+            eprintln!("获取用户信息失败: {}", e);
+            HttpResponse::InternalServerError().json(json!({
+                "success": false,
+                "message": "获取用户信息失败"
+            }))
+        }
+    }
+}
+
+pub async fn search_users(
+    session: Session,
+    db: web::Data<Database>,
+    request: web::Json<crate::dto::SearchUserRequest>,
+) -> impl Responder {
+    if let Err(response) = check_auth(&session) {
+        return response;
+    }
+
+    let page = request.page.unwrap_or(1);
+    let limit = request.limit.unwrap_or(20);
+    let skip = (page - 1) * limit;
+
+    let user_collection = db.collection::<User>("users");
+    
+    // Create search query
+    let search_query = doc! {
+        "$or": [
+            { "user_name": { "$regex": &request.query, "$options": "i" } },
+            { "user_email": { "$regex": &request.query, "$options": "i" } },
+            { "user_nick_name": { "$regex": &request.query, "$options": "i" } }
+        ]
+    };
+
+    // Get total count
+    let total = match user_collection.count_documents(search_query.clone(), None).await {
+        Ok(count) => count,
+        Err(e) => {
+            eprintln!("Database error when counting users: {}", e);
+            return HttpResponse::InternalServerError().json(crate::dto::UserListResponse {
+                code: 500,
+                msg: "服务器错误".to_string(),
+                users: vec![],
+                total: 0,
+            });
+        }
+    };
+
+    // Get users with pagination
+    let find_options = FindOptions::builder()
+        .skip(skip as u64)
+        .limit(limit as i64)
+        .sort(doc! { "created_at": -1 })
+        .build();
+
+    let users: Vec<User> = match user_collection.find(search_query, find_options).await {
+        Ok(cursor) => cursor.try_collect().await.unwrap_or_else(|_| vec![]),
+        Err(e) => {
+            eprintln!("Database error when searching users: {}", e);
+            return HttpResponse::InternalServerError().json(crate::dto::UserListResponse {
+                code: 500,
+                msg: "服务器错误".to_string(),
+                users: vec![],
+                total: 0,
+            });
+        }
+    };
+
+    // Convert to UserAdminInfo format
+    let user_infos: Vec<crate::dto::UserAdminInfo> = users
+        .into_iter()
+        .map(|user| crate::dto::UserAdminInfo {
+            id: user.id.map_or_else(|| "".to_string(), |id| id.to_string()),
+            user_name: user.user_name,
+            user_nick_name: user.user_nick_name,
+            user_email: user.user_email.unwrap_or_else(|| "".to_string()),
+            vip_level: user.vip_level.unwrap_or(0),
+            vip_end_time: user.vip_end_time.map(|end| end.to_string()),
+            created_at: user.created_at.map_or_else(|| "".to_string(), |dt| dt.to_string()),
+            last_login: None,
+        })
+        .collect();
+
+    HttpResponse::Ok().json(crate::dto::UserListResponse {
+        code: 200,
+        msg: "搜索成功".to_string(),
+        users: user_infos,
+        total: total as i64,
+    })
 }

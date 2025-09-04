@@ -16,7 +16,7 @@ if [ ! -f "/app/maccms_rust" ]; then
         && rm linux.zip
 fi
 
-chmod +x maccms_rust
+chmod +x /app/maccms_rust
 
 # 生成随机key
 SESSION_KEY=$(openssl rand -hex 32)

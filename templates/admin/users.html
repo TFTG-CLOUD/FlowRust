@@ -1,0 +1,786 @@
+{% extends "admin/base.html" %}
+
+{% block title %}用户管理 - {{ SITENAME | default(value='影视天堂') }}{% endblock %}
+
+{% block scripts %}
+<!-- 用户管理页面专用JavaScript -->
+<script>
+    // 页面加载完成后初始化
+    document.addEventListener('DOMContentLoaded', function () {
+        loadUsers();
+
+        // 绑定搜索表单提交事件
+        document.getElementById('searchForm').addEventListener('submit', function (e) {
+            e.preventDefault();
+            currentPage = 1;
+            loadUsers();
+        });
+
+        // 绑定VIP等级筛选事件
+        document.getElementById('vipFilter').addEventListener('change', function () {
+            currentPage = 1;
+            loadUsers();
+        });
+    });
+
+    let currentPage = 1;
+    let currentLimit = 20;
+    let totalUsers = 0;
+    let selectedUsers = new Set();
+
+    // 加载用户列表
+    async function loadUsers() {
+        const searchQuery = document.getElementById('searchQuery').value.trim();
+        const vipFilter = document.getElementById('vipFilter').value;
+
+        try {
+            if (searchQuery) {
+                // 如果有搜索关键词，使用搜索接口
+                const response = await fetch('/api/admin/users/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        query: searchQuery,
+                        page: currentPage,
+                        limit: currentLimit
+                    })
+                });
+
+                const result = await response.json();
+                if (result.code === 200) {
+                    displayUsers(result.users);
+                    totalUsers = result.total;
+                } else {
+                    window.showNotification(result.msg || '搜索失败', 'error');
+                }
+            } else {
+                // 否则使用列表接口
+                let url = `/api/admin/users?page=${currentPage}&limit=${currentLimit}`;
+
+                const response = await fetch(url);
+                const result = await response.json();
+
+                if (result.code === 200) {
+                    let filteredUsers = result.users;
+                    if (vipFilter !== '') {
+                        filteredUsers = result.users.filter(user =>
+                            user.vip_level === parseInt(vipFilter)
+                        );
+                    }
+                    // console.log(filteredUsers);
+                    displayUsers(filteredUsers);
+                    totalUsers = filteredUsers.length;
+                } else {
+                    window.showNotification(result.msg || '加载用户列表失败', 'error');
+                }
+            }
+        } catch (error) {
+            console.error('加载用户列表失败:', error);
+            window.showNotification('网络错误，请稍后重试', 'error');
+        }
+    }
+
+    // 显示用户列表
+    function displayUsers(users) {
+        const tbody = document.getElementById('usersList');
+
+        if (users.length === 0) {
+            tbody.innerHTML = `
+            <tr>
+                <td colspan="8" class="text-center text-gray-500 py-8">暂无用户数据</td>
+            </tr>
+        `;
+            return;
+        }
+
+        tbody.innerHTML = users.map(user => `
+        <tr class="border-b border-gray-200 hover:bg-gray-50">
+            <td class="px-6 py-4">
+                <input type="checkbox" class="user-checkbox w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500" value="${user.id}" onchange="updateSelection()">
+            </td>
+            <td class="px-6 py-4">
+                <div class="flex items-center space-x-3">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                            <span class="text-sm font-medium text-white">${user.user_name.charAt(0).toUpperCase()}</span>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-sm font-medium text-gray-900">${user.user_name}</div>
+                        <div class="text-sm text-gray-500">${user.user_email}</div>
+                    </div>
+                </div>
+            </td>
+            <td class="px-6 py-4 text-sm text-gray-900">${user.user_nick_name || '-'}</td>
+            <td class="px-6 py-4">
+                ${getVipBadge(user.vip_level)}
+            </td>
+            <td class="px-6 py-4 text-sm text-gray-900">${user.vip_end_time ? formatDate(user.vip_end_time) : '-'}</td>
+            <td class="px-6 py-4 text-sm text-gray-900">${formatDate(user.created_at)}</td>
+            <td class="px-6 py-4 text-sm text-gray-900">${user.last_login || '-'}</td>
+            <td class="px-6 py-4">
+                <div class="flex items-center space-x-2">
+                    <button onclick="editUser('${user._id}')" class="text-blue-600 hover:text-blue-900 p-1 rounded" title="编辑">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                        </svg>
+                    </button>
+                    <button onclick="deleteUser('${user._id}', '${user.user_name}')" class="text-red-600 hover:text-red-900 p-1 rounded" title="删除">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+
+        updatePagination();
+    }
+
+    // 获取VIP等级徽章
+    function getVipBadge(vipLevel) {
+        if (vipLevel === 0) {
+            return '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">普通用户</span>';
+        } else {
+            const colors = {
+                1: 'bg-blue-100 text-blue-800',
+                2: 'bg-purple-100 text-purple-800',
+                3: 'bg-yellow-100 text-yellow-800',
+                4: 'bg-pink-100 text-pink-800',
+                5: 'bg-red-100 text-red-800'
+            };
+            return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colors[vipLevel] || 'bg-gray-100 text-gray-800'}">VIP ${vipLevel}</span>`;
+        }
+    }
+
+    // 更新分页
+    function updatePagination() {
+        const totalPages = Math.ceil(totalUsers / currentLimit);
+        const pagination = document.getElementById('pagination');
+
+        if (totalPages <= 1) {
+            pagination.innerHTML = '';
+            return;
+        }
+
+        let paginationHTML = `
+        <div class="flex items-center justify-between">
+            <div class="flex-1 flex justify-between sm:hidden">
+                <button onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''} class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 ${currentPage === 1 ? 'opacity-50 cursor-not-allowed' : ''}">
+                    上一页
+                </button>
+                <button onclick="changePage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''} class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 ${currentPage === totalPages ? 'opacity-50 cursor-not-allowed' : ''}">
+                    下一页
+                </button>
+            </div>
+            <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                <div>
+                    <p class="text-sm text-gray-700">
+                        显示第 <span class="font-medium">${(currentPage - 1) * currentLimit + 1}</span> 到 <span class="font-medium">${Math.min(currentPage * currentLimit, totalUsers)}</span> 条，
+                        共 <span class="font-medium">${totalUsers}</span> 条记录
+                    </p>
+                </div>
+                <div>
+                    <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+    `;
+
+        if (currentPage > 1) {
+            paginationHTML += `
+                        <button onclick="changePage(${currentPage - 1})" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                            </svg>
+                        </button>
+            `;
+        }
+
+        for (let i = 1; i <= totalPages; i++) {
+            if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+                paginationHTML += `
+                            <button onclick="changePage(${i})" class="relative inline-flex items-center px-4 py-2 border text-sm font-medium ${i === currentPage ? 'z-10 bg-blue-50 border-blue-500 text-blue-600' : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'}">
+                                ${i}
+                            </button>
+                `;
+            } else if (i === currentPage - 3 || i === currentPage + 3) {
+                paginationHTML += `
+                            <span class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+                                ...
+                            </span>
+                `;
+            }
+        }
+
+        if (currentPage < totalPages) {
+            paginationHTML += `
+                        <button onclick="changePage(${currentPage + 1})" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                            </svg>
+                        </button>
+            `;
+        }
+
+        paginationHTML += `
+                    </nav>
+                </div>
+            </div>
+        </div>
+    `;
+
+        pagination.innerHTML = paginationHTML;
+    }
+
+    // 切换页面
+    function changePage(page) {
+        const totalPages = Math.ceil(totalUsers / currentLimit);
+        if (page >= 1 && page <= totalPages) {
+            currentPage = page;
+            loadUsers();
+        }
+    }
+
+    // 显示创建用户模态框
+    function showCreateModal() {
+        document.getElementById('createModal').classList.remove('hidden');
+        resetCreateForm();
+    }
+
+    // 隐藏创建用户模态框
+    function hideCreateModal() {
+        document.getElementById('createModal').classList.add('hidden');
+    }
+
+    // 重置创建表单
+    function resetCreateForm() {
+        document.getElementById('createForm').reset();
+    }
+
+    // 创建用户
+    async function createUser() {
+        const formData = {
+            user_name: document.getElementById('userName').value.trim(),
+            user_email: document.getElementById('userEmail').value.trim(),
+            user_nick_name: document.getElementById('userNickName').value.trim(),
+            password: document.getElementById('password').value,
+            vip_level: parseInt(document.getElementById('vipLevel').value),
+            vip_duration_days: parseInt(document.getElementById('vipDuration').value) || null
+        };
+
+        // 验证表单
+        if (!formData.user_name || !formData.user_email || !formData.password) {
+            window.showNotification('请填写必填字段', 'warning');
+            return;
+        }
+
+        if (formData.password.length < 6) {
+            window.showNotification('密码长度不能少于6位', 'warning');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/admin/users', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                hideCreateModal();
+                loadUsers();
+                window.showNotification('用户创建成功', 'success');
+            } else {
+                window.showNotification(result.message || '创建失败', 'error');
+            }
+        } catch (error) {
+            console.error('创建用户失败:', error);
+            window.showNotification('网络错误，请稍后重试', 'error');
+        }
+    }
+
+    // 编辑用户
+    async function editUser(userId) {
+        // 获取用户信息
+        try {
+            const response = await fetch(`/api/admin/users/${userId}`, {
+                method: 'GET'
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showEditModalWithData(result.user);
+            } else {
+                window.showNotification(result.message || '获取用户信息失败', 'error');
+            }
+        } catch (error) {
+            console.error('获取用户信息失败:', error);
+            window.showNotification('获取用户信息失败', 'error');
+        }
+    }
+
+    // 显示编辑模态框并加载数据
+    function showEditModalWithData(userData) {
+        document.getElementById('editModal').classList.remove('hidden');
+        
+        // 填充表单数据
+        document.getElementById('editUserId').value = userData._id;
+        document.getElementById('editUserName').value = userData.user_name;
+        document.getElementById('editUserEmail').value = userData.user_email;
+        document.getElementById('editUserNickName').value = userData.user_nick_name || '';
+        document.getElementById('editVipLevel').value = userData.vip_level;
+        
+        // 清空密码字段（因为不显示原密码）
+        document.getElementById('editPassword').value = '';
+    }
+
+    // 显示编辑模态框
+    function showEditModal(userId) {
+        // 这个函数保留用于兼容性，但实际使用 showEditModalWithData
+        document.getElementById('editModal').classList.remove('hidden');
+        document.getElementById('editUserId').value = userId;
+    }
+
+    // 隐藏编辑模态框
+    function hideEditModal() {
+        document.getElementById('editModal').classList.add('hidden');
+    }
+
+    // 更新用户
+    async function updateUser() {
+        const userId = document.getElementById('editUserId').value;
+        const formData = {
+            user_id: userId,
+            user_name: document.getElementById('editUserName').value.trim(),
+            user_email: document.getElementById('editUserEmail').value.trim(),
+            user_nick_name: document.getElementById('editUserNickName').value.trim(),
+            password: document.getElementById('editPassword').value,
+            vip_level: parseInt(document.getElementById('editVipLevel').value),
+            vip_duration_days: parseInt(document.getElementById('editVipDuration').value) || null
+        };
+
+        try {
+            const response = await fetch(`/api/admin/users/${userId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                hideEditModal();
+                loadUsers();
+                window.showNotification('用户更新成功', 'success');
+            } else {
+                window.showNotification(result.message || '更新失败', 'error');
+            }
+        } catch (error) {
+            console.error('更新用户失败:', error);
+            window.showNotification('网络错误，请稍后重试', 'error');
+        }
+    }
+
+    // 删除用户
+    async function deleteUser(userId, userName) {
+        if (!confirm(`确定要删除用户 "${userName}" 吗？此操作不可恢复！`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/admin/users', {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    user_ids: [userId]
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                loadUsers();
+                window.showNotification('用户删除成功', 'success');
+            } else {
+                window.showNotification(result.message || '删除失败', 'error');
+            }
+        } catch (error) {
+            console.error('删除用户失败:', error);
+            window.showNotification('网络错误，请稍后重试', 'error');
+        }
+    }
+
+    // 批量删除用户
+    function batchDeleteUsers() {
+        if (selectedUsers.size === 0) {
+            window.showNotification('请选择要删除的用户', 'warning');
+            return;
+        }
+
+        if (!confirm(`确定要删除选中的 ${selectedUsers.size} 个用户吗？此操作不可恢复！`)) {
+            return;
+        }
+
+        const userIds = Array.from(selectedUsers);
+
+        fetch('/api/admin/users', {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                user_ids: userIds
+            })
+        })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    window.showNotification(result.message, 'success');
+                    selectedUsers.clear();
+                    loadUsers();
+                } else {
+                    window.showNotification(result.message || '删除失败', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('批量删除失败:', error);
+                window.showNotification('网络错误，请稍后重试', 'error');
+            });
+    }
+
+    // 切换全选
+    function toggleSelectAll() {
+        const selectAll = document.getElementById('selectAll');
+        const checkboxes = document.querySelectorAll('.user-checkbox');
+
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = selectAll.checked;
+            if (selectAll.checked) {
+                selectedUsers.add(checkbox.value);
+            } else {
+                selectedUsers.delete(checkbox.value);
+            }
+        });
+
+        updateBatchDeleteButton();
+    }
+
+    // 更新选择状态
+    function updateSelection() {
+        const checkboxes = document.querySelectorAll('.user-checkbox');
+        selectedUsers.clear();
+
+        checkboxes.forEach(checkbox => {
+            if (checkbox.checked) {
+                selectedUsers.add(checkbox.value);
+            }
+        });
+
+        // 更新全选状态
+        const selectAll = document.getElementById('selectAll');
+        const checkedCount = selectedUsers.size;
+        selectAll.checked = checkedCount > 0 && checkedCount === checkboxes.length;
+        selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+
+        updateBatchDeleteButton();
+    }
+
+    // 更新批量删除按钮状态
+    function updateBatchDeleteButton() {
+        const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+        batchDeleteBtn.style.display = selectedUsers.size > 0 ? 'flex' : 'none';
+    }
+
+    // 重置搜索
+    function resetSearch() {
+        document.getElementById('searchQuery').value = '';
+        document.getElementById('vipFilter').value = '';
+        currentPage = 1;
+        loadUsers();
+    }
+
+    // 格式化日期
+    function formatDate(dateString) {
+        // Extract just the date and time part: "2025-09-03 5:06:01"
+        const match = dateString.match(/(\d{4}-\d{2}-\d{2}) (\d{1,2}:\d{2}:\d{2})/);
+        if (match) {
+            return `${match[1]} ${match[2]}`;
+        }
+        // If parsing fails, return original string
+        return dateString;
+    }
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <!-- 页面标题和操作按钮 -->
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">用户管理</h1>
+            <p class="mt-1 text-sm text-gray-500">管理系统中的用户账户</p>
+        </div>
+        <button onclick="showCreateModal()"
+            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6">
+                </path>
+            </svg>
+            创建用户
+        </button>
+    </div>
+
+    <!-- 搜索和筛选 -->
+    <div class="bg-white shadow-sm rounded-lg border border-gray-200 mb-6">
+        <div class="p-6">
+            <form id="searchForm" class="grid grid-cols-1 md:grid-cols-12 gap-4">
+                <div class="md:col-span-8">
+                    <div class="flex rounded-md shadow-sm">
+                        <input type="text" id="searchQuery" placeholder="搜索用户名、邮箱或昵称..."
+                            class="flex-1 min-w-0 block w-full px-3 py-2 rounded-l-md border-gray-300 focus:ring-blue-500 focus:border-blue-500 sm:text-sm border">
+                        <button type="submit"
+                            class="inline-flex items-center px-4 py-2 border border-gray-300 border-l-0 bg-gray-50 text-gray-700 text-sm font-medium hover:bg-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                            搜索
+                        </button>
+                        <button type="button" onclick="resetSearch()"
+                            class="inline-flex items-center px-4 py-2 border border-gray-300 border-l-0 bg-gray-50 text-gray-700 text-sm font-medium rounded-r-md hover:bg-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                            重置
+                        </button>
+                    </div>
+                </div>
+                <div class="md:col-span-4">
+                    <select id="vipFilter"
+                        class="block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                        <option value="">所有用户</option>
+                        <option value="0">普通用户</option>
+                        <option value="1">VIP 1</option>
+                        <option value="2">VIP 2</option>
+                        <option value="3">VIP 3</option>
+                        <option value="4">VIP 4</option>
+                        <option value="5">VIP 5</option>
+                    </select>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 用户列表 -->
+    <div class="bg-white shadow-sm rounded-lg border border-gray-200">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <div class="flex justify-between items-center">
+                <h2 class="text-lg font-medium text-gray-900">用户列表</h2>
+                <button id="batchDeleteBtn" onclick="batchDeleteUsers()" style="display: none;"
+                    class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                        </path>
+                    </svg>
+                    批量删除
+                </button>
+            </div>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <input type="checkbox" id="selectAll"
+                                class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                                onchange="toggleSelectAll()">
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">用户信息
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">昵称
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">VIP等级
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            VIP到期时间
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">注册时间
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">最后登录
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作
+                        </th>
+                    </tr>
+                </thead>
+                <tbody id="usersList" class="bg-white divide-y divide-gray-200">
+                    <!-- 用户数据将通过JavaScript动态加载 -->
+                </tbody>
+            </table>
+        </div>
+        <!-- 分页 -->
+        <div class="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+            <div id="pagination">
+                <!-- 分页控件将通过JavaScript动态生成 -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 创建用户模态框 -->
+<div id="createModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="mt-3">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg leading-6 font-medium text-gray-900">创建用户</h3>
+                <button onclick="hideCreateModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
+                    </svg>
+                </button>
+            </div>
+            <form id="createForm" class="space-y-4">
+                <div>
+                    <label for="userName" class="block text-sm font-medium text-gray-700">用户名 <span
+                            class="text-red-500">*</span></label>
+                    <input type="text" id="userName" required
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="userEmail" class="block text-sm font-medium text-gray-700">邮箱 <span
+                            class="text-red-500">*</span></label>
+                    <input type="email" id="userEmail" required
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="userNickName" class="block text-sm font-medium text-gray-700">昵称</label>
+                    <input type="text" id="userNickName"
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="password" class="block text-sm font-medium text-gray-700">密码 <span
+                            class="text-red-500">*</span></label>
+                    <input type="password" id="password" required minlength="6"
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                    <p class="mt-1 text-xs text-gray-500">密码长度不能少于6位</p>
+                </div>
+                <div>
+                    <label for="vipLevel" class="block text-sm font-medium text-gray-700">VIP等级</label>
+                    <select id="vipLevel"
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                        <option value="0">普通用户</option>
+                        <option value="1">VIP 1</option>
+                        <option value="2">VIP 2</option>
+                        <option value="3">VIP 3</option>
+                        <option value="4">VIP 4</option>
+                        <option value="5">VIP 5</option>
+                    </select>
+                </div>
+                <div id="vipDurationField" style="display: none;">
+                    <label for="vipDuration" class="block text-sm font-medium text-gray-700">VIP时长（天）</label>
+                    <input type="number" id="vipDuration" min="1"
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+            </form>
+            <div class="flex justify-end space-x-3 mt-6">
+                <button onclick="hideCreateModal()"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                    取消
+                </button>
+                <button onclick="createUser()"
+                    class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    创建
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑用户模态框 -->
+<div id="editModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="mt-3">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg leading-6 font-medium text-gray-900">编辑用户</h3>
+                <button onclick="hideEditModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
+                    </svg>
+                </button>
+            </div>
+            <form id="editForm" class="space-y-4">
+                <input type="hidden" id="editUserId">
+                <div>
+                    <label for="editUserName" class="block text-sm font-medium text-gray-700">用户名</label>
+                    <input type="text" id="editUserName"
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="editUserEmail" class="block text-sm font-medium text-gray-700">邮箱</label>
+                    <input type="email" id="editUserEmail"
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="editUserNickName" class="block text-sm font-medium text-gray-700">昵称</label>
+                    <input type="text" id="editUserNickName"
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="editPassword" class="block text-sm font-medium text-gray-700">新密码（留空则不修改）</label>
+                    <input type="password" id="editPassword" minlength="6"
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                    <p class="mt-1 text-xs text-gray-500">密码长度不能少于6位</p>
+                </div>
+                <div>
+                    <label for="editVipLevel" class="block text-sm font-medium text-gray-700">VIP等级</label>
+                    <select id="editVipLevel"
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                        <option value="0">普通用户</option>
+                        <option value="1">VIP 1</option>
+                        <option value="2">VIP 2</option>
+                        <option value="3">VIP 3</option>
+                        <option value="4">VIP 4</option>
+                        <option value="5">VIP 5</option>
+                    </select>
+                </div>
+                <div id="editVipDurationField" style="display: none;">
+                    <label for="editVipDuration" class="block text-sm font-medium text-gray-700">VIP时长（天）</label>
+                    <input type="number" id="editVipDuration" min="1"
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+            </form>
+            <div class="flex justify-end space-x-3 mt-6">
+                <button onclick="hideEditModal()"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                    取消
+                </button>
+                <button onclick="updateUser()"
+                    class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    更新
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

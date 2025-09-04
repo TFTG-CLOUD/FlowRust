@@ -15,15 +15,15 @@ mod template;
 mod web_handlers;
 
 use admin_handlers::{
-    admin_cards_page, batch_delete_source, batch_delete_vods, batch_set_vip, create_collection, create_config, create_indexes,
-    create_or_update_binding, create_type, create_vod, delete_binding, delete_collection,
-    delete_cards, delete_config, delete_type, delete_vod, generate_cards, get_batch_delete_progress_handler, get_bindings,
+    admin_cards_page, admin_users_page, batch_delete_source, batch_delete_vods, batch_set_vip, create_collection, create_config, create_indexes,
+    create_or_update_binding, create_type, create_user, create_vod, delete_binding, delete_collection,
+    delete_cards, delete_config, delete_type, delete_users, delete_vod, generate_cards, get_batch_delete_progress_handler, get_bindings,
     get_cards_list, get_collect_progress, get_collection_binding_status, get_collections, get_config_by_key,
     get_configs, get_index_status, get_indexes_data, get_running_batch_delete_tasks_handler,
     get_running_tasks, get_scheduled_task_logs, get_scheduled_task_status, get_statistics,
-    search_cards, get_types, get_vods_admin, list_indexes, start_collection_collect, start_scheduled_task,
+    search_cards, search_users, get_types, get_user_by_id, get_users_list, get_vods_admin, list_indexes, start_collection_collect, start_scheduled_task,
     stop_batch_delete_task_handler, stop_collect_task, stop_scheduled_task, update_collection,
-    update_config, update_scheduled_task_config, update_type, update_vod,
+    update_config, update_scheduled_task_config, update_type, update_user, update_vod,
 };
 use web_handlers::{get_buy_card_config, get_user_vip_info, use_card, vip_check_handler};
 use auth_handlers::{get_current_user, login, logout, register};
@@ -307,6 +307,10 @@ async fn main() -> std::io::Result<()> {
                     .route(web::get().to(admin_handlers::admin_cards_page)),
             )
             .service(
+                web::resource("/admin/users")
+                    .route(web::get().to(admin_handlers::admin_users_page)),
+            )
+            .service(
                 web::resource("/admin/init-data")
                     .route(web::post().to(web_handlers::init_data_handler)),
             )
@@ -458,6 +462,22 @@ async fn main() -> std::io::Result<()> {
                     .service(
                         web::resource("/cards/search")
                             .route(web::post().to(search_cards)),
+                    )
+                    // User Management
+                    .service(
+                        web::resource("/users")
+                            .route(web::get().to(get_users_list))
+                            .route(web::post().to(create_user))
+                            .route(web::delete().to(delete_users)),
+                    )
+                    .service(
+                        web::resource("/users/search")
+                            .route(web::post().to(search_users)),
+                    )
+                    .service(
+                        web::resource("/users/{id}")
+                            .route(web::get().to(get_user_by_id))
+                            .route(web::put().to(update_user)),
                     )
                     // Scheduled Task Management
                     .service(
