@@ -38,7 +38,7 @@
 
             if (searchCode) {
                 // 如果有搜索关键词，使用搜索接口
-                const response = await fetch('/api/admin/cards/search', {
+                const response = await apiFetch('/api/admin/cards/search', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -60,7 +60,7 @@
                 }
             } else {
                 // 否则使用列表接口
-                const response = await fetch(url);
+                const response = await apiFetch(url);
                 const result = await response.json();
 
                 if (result.code === 1) {
@@ -247,7 +247,7 @@
         }
 
         try {
-            const response = await fetch('/api/admin/cards/generate', {
+            const response = await apiFetch('/api/admin/cards/generate', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -348,7 +348,7 @@
         }
 
         try {
-            const response = await fetch('/api/admin/cards/delete', {
+            const response = await apiFetch('/api/admin/cards/delete', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -385,7 +385,7 @@
 
         const cardIds = Array.from(selectedCards);
 
-        fetch('/api/admin/cards/delete', {
+        apiFetch('/api/admin/cards/delete', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

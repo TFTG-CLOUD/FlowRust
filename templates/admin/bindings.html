@@ -365,7 +365,7 @@
 
     // 加载分类数据
     function loadTypes() {
-        fetch('/api/admin/types')
+        apiFetch('/api/admin/types')
             .then(function (response) { return response.json(); })
             .then(function (data) {
                 types = data;
@@ -444,7 +444,7 @@ function editBinding(id) {
     function confirmDelete() {
         if (!currentDeleteId) return;
 
-        fetch('/api/admin/bindings/' + currentDeleteId, {
+        apiFetch('/api/admin/bindings/' + currentDeleteId, {
             method: 'DELETE'
         })
             .then(function (response) {
@@ -490,7 +490,7 @@ function editBinding(id) {
             local_type_id: localTypeId
         };
 
-        fetch('/api/admin/bindings', {
+        apiFetch('/api/admin/bindings', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'

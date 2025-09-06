@@ -452,7 +452,7 @@
     function confirmDelete() {
         if (!currentDeleteKey) return;
 
-        fetch(`/api/admin/configs/${currentDeleteKey}`, {
+        apiFetch(`/api/admin/configs/${currentDeleteKey}`, {
             method: 'DELETE'
         })
             .then(response => {
@@ -492,7 +492,7 @@
         const url = isEditing ? `/api/admin/configs/${formData.config_key}` : '/api/admin/configs';
         const method = isEditing ? 'PUT' : 'POST';
 
-        fetch(url, {
+        apiFetch(url, {
             method: method,
             headers: {
                 'Content-Type': 'application/json'

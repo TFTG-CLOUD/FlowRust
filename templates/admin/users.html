@@ -36,7 +36,7 @@
         try {
             if (searchQuery) {
                 // 如果有搜索关键词，使用搜索接口
-                const response = await fetch('/api/admin/users/search', {
+                const response = await apiFetch('/api/admin/users/search', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -59,7 +59,7 @@
                 // 否则使用列表接口
                 let url = `/api/admin/users?page=${currentPage}&limit=${currentLimit}`;
 
-                const response = await fetch(url);
+                const response = await apiFetch(url);
                 const result = await response.json();
 
                 if (result.code === 200) {
@@ -281,7 +281,7 @@
         }
 
         try {
-            const response = await fetch('/api/admin/users', {
+            const response = await apiFetch('/api/admin/users', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -308,7 +308,7 @@
     async function editUser(userId) {
         // 获取用户信息
         try {
-            const response = await fetch(`/api/admin/users/${userId}`, {
+            const response = await apiFetch(`/api/admin/users/${userId}`, {
                 method: 'GET'
             });
 
@@ -366,7 +366,7 @@
         };
 
         try {
-            const response = await fetch(`/api/admin/users/${userId}`, {
+            const response = await apiFetch(`/api/admin/users/${userId}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -396,7 +396,7 @@
         }
 
         try {
-            const response = await fetch('/api/admin/users', {
+            const response = await apiFetch('/api/admin/users', {
                 method: 'DELETE',
                 headers: {
                     'Content-Type': 'application/json',
@@ -433,7 +433,7 @@
 
         const userIds = Array.from(selectedUsers);
 
-        fetch('/api/admin/users', {
+        apiFetch('/api/admin/users', {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json',

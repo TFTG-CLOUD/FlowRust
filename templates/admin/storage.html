@@ -1,0 +1,675 @@
+{% extends "admin/base.html" %}
+
+{% block title %}分布式储存管理 - {{ SITENAME | default(value='影视天堂') }}{% endblock %}
+
+{% block scripts %}
+<!-- 分布式储存管理页面专用JavaScript -->
+<script>
+    // 页面加载完成后初始化
+    document.addEventListener('DOMContentLoaded', function () {
+        loadStorageServers();
+
+        // 绑定创建表单提交事件
+        document.getElementById('createForm').addEventListener('submit', function (e) {
+            e.preventDefault();
+            createStorageServer();
+        });
+    });
+
+    let currentPage = 1;
+    let currentLimit = 20;
+    let totalServers = 0;
+    let selectedServers = new Set();
+
+    // 加载分布式储存服务器列表
+    async function loadStorageServers() {
+        try {
+            const response = await apiFetch('/api/admin/storage/servers');
+            const result = await response.json();
+
+            if (result.code === 200) {
+                displayStorageServers(result.data || []);
+                totalServers = result.data ? result.data.length : 0;
+            } else {
+                window.showNotification(result.msg || '加载服务器列表失败', 'error');
+            }
+        } catch (error) {
+            console.error('加载服务器列表失败:', error);
+            window.showNotification('网络错误，请稍后重试', 'error');
+        }
+    }
+
+    // 显示分布式储存服务器列表
+    function displayStorageServers(servers) {
+        const tbody = document.getElementById('serversList');
+
+        if (servers.length === 0) {
+            tbody.innerHTML = `
+            <tr>
+                <td colspan="8" class="text-center text-gray-500 py-8">暂无分布式储存服务器</td>
+            </tr>
+        `;
+            return;
+        }
+
+        tbody.innerHTML = servers.map(server => `
+        <tr class="border-b border-gray-200 hover:bg-gray-50">
+            <td class="px-6 py-4">
+                <input type="checkbox" class="server-checkbox w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500" value="${server._id}" onchange="updateSelection()">
+            </td>
+            <td class="px-6 py-4">
+                <div class="flex items-center space-x-3">
+                    <div class="flex-shrink-0">
+                        <div class="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                            <span class="text-sm font-medium text-white">${server.name.charAt(0).toUpperCase()}</span>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-sm font-medium text-gray-900">${server.name}</div>
+                        <div class="text-sm text-gray-500">${server.host}</div>
+                    </div>
+                </div>
+            </td>
+            <td class="px-6 py-4 text-sm text-gray-900">${server.cms_id}</td>
+            <td class="px-6 py-4">
+                ${getStatusBadge(server.status)}
+            </td>
+            <td class="px-6 py-4 text-sm text-gray-900">${formatDate(server.created_at)}</td>
+            <td class="px-6 py-4 text-sm text-gray-900">${formatDate(server.updated_at)}</td>
+            <td class="px-6 py-4">
+                <div class="flex items-center space-x-2">
+                    <div class="relative group">
+                        <button class="text-gray-600 hover:text-gray-900 p-1 rounded" title="更多操作">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path>
+                            </svg>
+                        </button>
+                        <div class="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
+                            <button onclick="testConnection('${server._id}')" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                </svg>
+                                测试连接
+                            </button>
+                            <div class="border-t border-gray-100"></div>
+                            <div class="px-4 py-2 text-xs text-gray-500">生成上传URL</div>
+                            <button onclick="generateUploadUrl('${server._id}', 'single')" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                                </svg>
+                                单文件上传
+                            </button>
+                            <button onclick="generateUploadUrl('${server._id}', 'chunk')" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                </svg>
+                                分片上传
+                            </button>
+                            <button onclick="generateUploadUrl('${server._id}', 'archive')" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                </svg>
+                                压缩包上传
+                            </button>
+                            <div class="border-t border-gray-100"></div>
+                            <button onclick="editServer('${server._id}')" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                                </svg>
+                                编辑
+                            </button>
+                            <button onclick="deleteServer('${server._id}', '${server.name}')" class="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50">
+                                <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                </svg>
+                                删除
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+
+        updatePagination();
+    }
+
+    // 获取状态徽章
+    function getStatusBadge(status) {
+        if (status === 1) {
+            return '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">启用</span>';
+        } else {
+            return '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">禁用</span>';
+        }
+    }
+
+    // 更新分页
+    function updatePagination() {
+        const totalPages = Math.ceil(totalServers / currentLimit);
+        const pagination = document.getElementById('pagination');
+
+        if (totalPages <= 1) {
+            pagination.innerHTML = '';
+            return;
+        }
+
+        let paginationHTML = `
+        <div class="flex items-center justify-between">
+            <div class="flex-1 flex justify-between sm:hidden">
+                <button onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''} class="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 ${currentPage === 1 ? 'opacity-50 cursor-not-allowed' : ''}">
+                    上一页
+                </button>
+                <button onclick="changePage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''} class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 ${currentPage === totalPages ? 'opacity-50 cursor-not-allowed' : ''}">
+                    下一页
+                </button>
+            </div>
+            <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                <div>
+                    <p class="text-sm text-gray-700">
+                        共 <span class="font-medium">${totalServers}</span> 台服务器
+                    </p>
+                </div>
+            </div>
+        </div>
+    `;
+
+        pagination.innerHTML = paginationHTML;
+    }
+
+    // 显示创建服务器模态框
+    function showCreateModal() {
+        document.getElementById('createModal').classList.remove('hidden');
+        resetCreateForm();
+    }
+
+    // 隐藏创建服务器模态框
+    function hideCreateModal() {
+        document.getElementById('createModal').classList.add('hidden');
+    }
+
+    // 重置创建表单
+    function resetCreateForm() {
+        document.getElementById('createForm').reset();
+    }
+
+    // 创建分布式储存服务器
+    async function createStorageServer() {
+        const formData = {
+            name: document.getElementById('serverName').value.trim(),
+            host: document.getElementById('serverHost').value.trim(),
+            api_key: document.getElementById('apiKey').value.trim(),
+            api_secret: document.getElementById('apiSecret').value.trim(),
+            cms_id: document.getElementById('cmsId').value.trim()
+        };
+
+        // 验证表单
+        if (!formData.name || !formData.host || !formData.api_key || !formData.api_secret || !formData.cms_id) {
+            window.showNotification('请填写所有必填字段', 'warning');
+            return;
+        }
+
+        try {
+            const response = await apiFetch('/api/admin/storage/servers', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData)
+            });
+
+            const result = await response.json();
+
+            if (result.code === 200) {
+                hideCreateModal();
+                loadStorageServers();
+                window.showNotification('服务器创建成功', 'success');
+            } else {
+                window.showNotification(result.msg || '创建失败', 'error');
+            }
+        } catch (error) {
+            console.error('创建服务器失败:', error);
+            window.showNotification('网络错误，请稍后重试', 'error');
+        }
+    }
+
+    // 测试服务器连接
+    async function testConnection(serverId) {
+        try {
+            const response = await apiFetch(`/api/admin/storage/servers/${serverId}/test`, {
+                method: 'POST'
+            });
+
+            const result = await response.json();
+
+            if (result.code === 200) {
+                if (result.data) {
+                    window.showNotification('服务器连接正常', 'success');
+                } else {
+                    window.showNotification('服务器连接失败', 'error');
+                }
+            } else {
+                window.showNotification(result.msg || '连接测试失败', 'error');
+            }
+        } catch (error) {
+            console.error('测试连接失败:', error);
+            window.showNotification('网络错误，请稍后重试', 'error');
+        }
+    }
+
+    // 编辑服务器
+    async function editServer(serverId) {
+        // 获取服务器信息
+        try {
+            const response = await apiFetch(`/api/admin/storage/servers/${serverId}`, {
+                method: 'GET'
+            });
+
+            const result = await response.json();
+
+            if (result.code === 200) {
+                showEditModalWithData(result.data);
+            } else {
+                window.showNotification(result.msg || '获取服务器信息失败', 'error');
+            }
+        } catch (error) {
+            console.error('获取服务器信息失败:', error);
+            window.showNotification('获取服务器信息失败', 'error');
+        }
+    }
+
+    // 显示编辑模态框并加载数据
+    function showEditModalWithData(serverData) {
+        document.getElementById('editModal').classList.remove('hidden');
+        
+        // 填充表单数据
+        document.getElementById('editServerId').value = serverData._id;
+        document.getElementById('editServerName').value = serverData.name;
+        document.getElementById('editServerHost').value = serverData.host;
+        document.getElementById('editApiKey').value = serverData.api_key;
+        document.getElementById('editApiSecret').value = serverData.api_secret;
+        document.getElementById('editCmsId').value = serverData.cms_id;
+        document.getElementById('editStatus').value = serverData.status;
+    }
+
+    // 隐藏编辑模态框
+    function hideEditModal() {
+        document.getElementById('editModal').classList.add('hidden');
+    }
+
+    // 更新服务器
+    async function updateServer() {
+        const serverId = document.getElementById('editServerId').value;
+        const formData = {
+            name: document.getElementById('editServerName').value.trim(),
+            host: document.getElementById('editServerHost').value.trim(),
+            api_key: document.getElementById('editApiKey').value.trim(),
+            api_secret: document.getElementById('editApiSecret').value.trim(),
+            cms_id: document.getElementById('editCmsId').value.trim(),
+            status: parseInt(document.getElementById('editStatus').value)
+        };
+
+        try {
+            const response = await apiFetch(`/api/admin/storage/servers/${serverId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData)
+            });
+
+            const result = await response.json();
+
+            if (result.code === 200) {
+                hideEditModal();
+                loadStorageServers();
+                window.showNotification('服务器更新成功', 'success');
+            } else {
+                window.showNotification(result.msg || '更新失败', 'error');
+            }
+        } catch (error) {
+            console.error('更新服务器失败:', error);
+            window.showNotification('网络错误，请稍后重试', 'error');
+        }
+    }
+
+    // 删除服务器
+    async function deleteServer(serverId, serverName) {
+        if (!confirm(`确定要删除服务器 "${serverName}" 吗？此操作不可恢复！`)) {
+            return;
+        }
+
+        try {
+            const response = await apiFetch(`/api/admin/storage/servers/${serverId}`, {
+                method: 'DELETE'
+            });
+
+            const result = await response.json();
+
+            if (result.code === 200) {
+                loadStorageServers();
+                window.showNotification('服务器删除成功', 'success');
+            } else {
+                window.showNotification(result.msg || '删除失败', 'error');
+            }
+        } catch (error) {
+            console.error('删除服务器失败:', error);
+            window.showNotification('网络错误，请稍后重试', 'error');
+        }
+    }
+
+    // 更新选择状态
+    function updateSelection() {
+        const checkboxes = document.querySelectorAll('.server-checkbox');
+        selectedServers.clear();
+
+        checkboxes.forEach(checkbox => {
+            if (checkbox.checked) {
+                selectedServers.add(checkbox.value);
+            }
+        });
+
+        // 更新全选状态
+        const selectAll = document.getElementById('selectAll');
+        const checkedCount = selectedServers.size;
+        selectAll.checked = checkedCount > 0 && checkedCount === checkboxes.length;
+        selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+    }
+
+    // 切换全选
+    function toggleSelectAll() {
+        const selectAll = document.getElementById('selectAll');
+        const checkboxes = document.querySelectorAll('.server-checkbox');
+
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = selectAll.checked;
+            if (selectAll.checked) {
+                selectedServers.add(checkbox.value);
+            } else {
+                selectedServers.delete(checkbox.value);
+            }
+        });
+
+        updateSelection();
+    }
+
+    // 生成上传预签名URL
+    async function generateUploadUrl(serverId, uploadType) {
+        const filename = prompt('请输入文件名：');
+        if (!filename) return;
+
+        const contentType = prompt('请输入文件类型（如：image/jpeg）：');
+        if (!contentType) return;
+
+        const fileSize = prompt('请输入文件大小（字节）：');
+        if (!fileSize) return;
+
+        try {
+            let url;
+            switch (uploadType) {
+                case 'single':
+                    url = `/api/user/storage/upload/single/${serverId}`;
+                    break;
+                case 'chunk':
+                    url = `/api/user/storage/upload/chunk/${serverId}`;
+                    break;
+                case 'archive':
+                    url = `/api/user/storage/upload/archive/${serverId}`;
+                    break;
+            }
+
+            const response = await apiFetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    filename: filename,
+                    content_type: contentType,
+                    file_size: parseInt(fileSize),
+                    upload_type: uploadType
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.code === 200) {
+                if (uploadType === 'chunk') {
+                    const message = `分片上传信息：\n上传ID: ${result.data.upload_id}\n分片大小: ${formatBytes(result.data.chunk_size)}\n总分片数: ${result.data.total_chunks}\n过期时间: ${new Date(result.data.expiration * 1000).toLocaleString()}\n\n完成URL: ${result.data.complete_url}\n\n前5个分片URL：`;
+                    const sampleUrls = result.data.chunk_urls.slice(0, 5).join('\n');
+                    alert(message + sampleUrls + (result.data.chunk_urls.length > 5 ? '\n...' : ''));
+                } else {
+                    alert(`上传URL：\n${result.data.upload_url}\n\n文件ID: ${result.data.file_id}\n最大文件大小: ${formatBytes(result.data.max_file_size)}\n过期时间: ${new Date(result.data.expiration * 1000).toLocaleString()}`);
+                }
+            } else {
+                window.showNotification(result.msg || '生成上传URL失败', 'error');
+            }
+        } catch (error) {
+            console.error('生成上传URL失败:', error);
+            window.showNotification('网络错误，请稍后重试', 'error');
+        }
+    }
+
+    // 格式化字节数
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // 格式化日期
+    function formatDate(dateString) {
+        // Extract just the date and time part: "2025-09-03 5:06:01"
+        const match = dateString.match(/(\d{4}-\d{2}-\d{2}) (\d{1,2}:\d{2}:\d{2})/);
+        if (match) {
+            return `${match[1]} ${match[2]}`;
+        }
+        // If parsing fails, return original string
+        return dateString;
+    }
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <!-- 页面标题和操作按钮 -->
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">分布式储存管理</h1>
+            <p class="mt-1 text-sm text-gray-500">管理分布式储存服务器和上传预签名URL生成</p>
+        </div>
+        <button onclick="showCreateModal()"
+            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6">
+                </path>
+            </svg>
+            添加服务器
+        </button>
+    </div>
+
+    <!-- 服务器列表 -->
+    <div class="bg-white shadow-sm rounded-lg border border-gray-200">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <div class="flex justify-between items-center">
+                <h2 class="text-lg font-medium text-gray-900">服务器列表</h2>
+            </div>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <input type="checkbox" id="selectAll"
+                                class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                                onchange="toggleSelectAll()">
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">服务器信息
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CMS ID
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">创建时间
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">更新时间
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作
+                        </th>
+                    </tr>
+                </thead>
+                <tbody id="serversList" class="bg-white divide-y divide-gray-200">
+                    <!-- 服务器数据将通过JavaScript动态加载 -->
+                </tbody>
+            </table>
+        </div>
+        <!-- 分页 -->
+        <div class="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+            <div id="pagination">
+                <!-- 分页控件将通过JavaScript动态生成 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 使用说明 -->
+    <div class="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-6">
+        <h3 class="text-lg font-medium text-blue-900 mb-4">使用说明</h3>
+        <div class="space-y-2 text-sm text-blue-800">
+            <p>• 添加服务器后，可以通过测试连接功能验证服务器是否可用</p>
+            <p>• 支持三种上传方式：单文件上传、分片上传、压缩包上传</p>
+            <p>• 生成的预签名URL可以直接传递给前端用于文件上传</p>
+            <p>• API密钥和密钥用于与分布式储存处理程序进行身份验证</p>
+        </div>
+    </div>
+</div>
+
+<!-- 创建服务器模态框 -->
+<div id="createModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="mt-3">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg leading-6 font-medium text-gray-900">添加分布式储存服务器</h3>
+                <button onclick="hideCreateModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
+                    </svg>
+                </button>
+            </div>
+            <form id="createForm" class="space-y-4">
+                <div>
+                    <label for="serverName" class="block text-sm font-medium text-gray-700">服务器名称 <span
+                            class="text-red-500">*</span></label>
+                    <input type="text" id="serverName" required
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="serverHost" class="block text-sm font-medium text-gray-700">服务器地址 <span
+                            class="text-red-500">*</span></label>
+                    <input type="url" id="serverHost" required placeholder="https://your-storage-server.com"
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="apiKey" class="block text-sm font-medium text-gray-700">API Key <span
+                            class="text-red-500">*</span></label>
+                    <input type="text" id="apiKey" required
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="apiSecret" class="block text-sm font-medium text-gray-700">API Secret <span
+                            class="text-red-500">*</span></label>
+                    <input type="password" id="apiSecret" required
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="cmsId" class="block text-sm font-medium text-gray-700">CMS ID <span
+                            class="text-red-500">*</span></label>
+                    <input type="text" id="cmsId" required
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+            </form>
+            <div class="flex justify-end space-x-3 mt-6">
+                <button onclick="hideCreateModal()"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                    取消
+                </button>
+                <button onclick="createStorageServer()"
+                    class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    创建
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 编辑服务器模态框 -->
+<div id="editModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="mt-3">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg leading-6 font-medium text-gray-900">编辑分布式储存服务器</h3>
+                <button onclick="hideEditModal()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                        </path>
+                    </svg>
+                </button>
+            </div>
+            <form id="editForm" class="space-y-4">
+                <input type="hidden" id="editServerId">
+                <div>
+                    <label for="editServerName" class="block text-sm font-medium text-gray-700">服务器名称</label>
+                    <input type="text" id="editServerName"
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="editServerHost" class="block text-sm font-medium text-gray-700">服务器地址</label>
+                    <input type="url" id="editServerHost"
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="editApiKey" class="block text-sm font-medium text-gray-700">API Key</label>
+                    <input type="text" id="editApiKey"
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="editApiSecret" class="block text-sm font-medium text-gray-700">API Secret</label>
+                    <input type="password" id="editApiSecret"
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="editCmsId" class="block text-sm font-medium text-gray-700">CMS ID</label>
+                    <input type="text" id="editCmsId"
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                </div>
+                <div>
+                    <label for="editStatus" class="block text-sm font-medium text-gray-700">状态</label>
+                    <select id="editStatus"
+                        class="mt-1 block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                        <option value="1">启用</option>
+                        <option value="0">禁用</option>
+                    </select>
+                </div>
+            </form>
+            <div class="flex justify-end space-x-3 mt-6">
+                <button onclick="hideEditModal()"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                    取消
+                </button>
+                <button onclick="updateServer()"
+                    class="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    更新
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

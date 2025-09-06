@@ -322,3 +322,38 @@ pub struct Audio {
     pub created_at: DateTime,
     pub updated_at: DateTime,
 }
+
+// Distributed storage server model
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct StorageServer {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub name: String,               // Server name
+    pub host: String,               // Server host URL
+    pub api_key: String,            // API key
+    pub api_secret: String,         // API secret
+    pub cms_id: String,             // CMS ID
+    pub status: i32,                // Status: 1=enabled, 0=disabled
+    pub created_at: DateTime,
+    pub updated_at: DateTime,
+}
+
+// Presigned upload response model
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PresignedUploadResponse {
+    pub upload_url: String,         // Presigned upload URL
+    pub file_id: String,            // File ID
+    pub expiration: i64,            // Expiration timestamp
+    pub max_file_size: i64,         // Maximum file size in bytes
+}
+
+// Chunk upload info model
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ChunkUploadInfo {
+    pub upload_id: String,          // Upload ID for chunk upload
+    pub chunk_size: i64,            // Chunk size in bytes
+    pub total_chunks: i32,          // Total number of chunks
+    pub chunk_urls: Vec<String>,    // URLs for each chunk
+    pub complete_url: String,        // URL to complete the upload
+    pub expiration: i64,            // Expiration timestamp
+}

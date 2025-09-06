@@ -227,7 +227,7 @@
         errorState.classList.add('hidden');
         container.innerHTML = '';
 
-        fetch('/api/admin/indexes/data')
+        apiFetch('/api/admin/indexes/data')
             .then(response => response.json())
             .then(data => {
                 loadingState.classList.add('hidden');
@@ -255,7 +255,7 @@
 
         showToast('正在创建索引...', 'info');
 
-        fetch('/api/admin/indexes/create', {
+        apiFetch('/api/admin/indexes/create', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -281,7 +281,7 @@
     function checkIndexStatus() {
         showToast('正在检查索引状态...', 'info');
 
-        fetch('/api/admin/indexes/status')
+        apiFetch('/api/admin/indexes/status')
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
@@ -300,7 +300,7 @@
     function listIndexes() {
         showToast('正在获取索引列表...', 'info');
 
-        fetch('/api/admin/indexes/list')
+        apiFetch('/api/admin/indexes/list')
             .then(response => response.json())
             .then(data => {
                 if (data.success) {

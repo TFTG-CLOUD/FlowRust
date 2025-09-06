@@ -275,7 +275,7 @@
         showToast('正在加载分类列表...', 'info');
 
         // 调用API获取分类列表
-        fetch('/api/collect/categories?url=' + encodeURIComponent(apiUrl))
+        apiFetch('/api/collect/categories?url=' + encodeURIComponent(apiUrl))
             .then(function (response) {
                 if (!response.ok) {
                     throw new Error('网络请求失败');
@@ -360,7 +360,7 @@
             local_type_id: localTypeId
         };
 
-        fetch('/api/admin/bindings', {
+        apiFetch('/api/admin/bindings', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -388,7 +388,7 @@
             return;
         }
 
-        fetch('/api/admin/bindings/' + bindingId, {
+        apiFetch('/api/admin/bindings/' + bindingId, {
             method: 'DELETE'
         })
             .then(response => response.json())
@@ -408,7 +408,7 @@
 
     // 加载绑定数据
     function loadBindings() {
-        fetch('/api/admin/bindings')
+        apiFetch('/api/admin/bindings')
             .then(function (response) {
                 return response.json();
             })
@@ -479,7 +479,7 @@
 
         showToast('正在加载视频列表...', 'info');
 
-        fetch('/api/collect/videos?' + params.toString())
+        apiFetch('/api/collect/videos?' + params.toString())
             .then(function (response) {
                 if (!response.ok) {
                     throw new Error('网络请求失败');
@@ -652,7 +652,7 @@
         document.getElementById('collect-progress-modal').classList.remove('hidden');
         resetProgressModal();
 
-        fetch('/api/collect/start', {
+        apiFetch('/api/collect/start', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -685,7 +685,7 @@
     // 轮询采集进度
     function pollCollectProgress(taskId) {
         var interval = setInterval(function () {
-            fetch('/api/collect/progress/' + taskId)
+            apiFetch('/api/collect/progress/' + taskId)
                 .then(function (response) {
                     return response.json();
                 })

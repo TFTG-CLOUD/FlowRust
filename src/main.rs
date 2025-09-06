@@ -1,38 +1,50 @@
+mod admin_auth_handlers;
 mod admin_handlers;
 mod api_handlers;
 mod auth;
 mod auth_handlers;
-mod auth_middleware;
 mod collect_handlers;
 mod db;
 mod dto;
 mod index_manager;
 mod init_data;
+mod jwt_auth;
 mod models;
 mod scheduled_task;
 mod site_data;
+mod unified_auth_handlers;
+mod storage_handlers;
+mod storage_service;
 mod template;
 mod web_handlers;
 
+use admin_auth_handlers::{admin_logout, get_current_admin_info, refresh_token};
 use admin_handlers::{
-    admin_cards_page, admin_users_page, batch_delete_source, batch_delete_vods, batch_set_vip, create_collection, create_config, create_indexes,
-    create_or_update_binding, create_type, create_user, create_vod, delete_binding, delete_collection,
-    delete_cards, delete_config, delete_type, delete_users, delete_vod, generate_cards, get_batch_delete_progress_handler, get_bindings,
-    get_cards_list, get_collect_progress, get_collection_binding_status, get_collections, get_config_by_key,
-    get_configs, get_index_status, get_indexes_data, get_running_batch_delete_tasks_handler,
-    get_running_tasks, get_scheduled_task_logs, get_scheduled_task_status, get_statistics,
-    search_cards, search_users, get_types, get_user_by_id, get_users_list, get_vods_admin, list_indexes, start_collection_collect, start_scheduled_task,
-    stop_batch_delete_task_handler, stop_collect_task, stop_scheduled_task, update_collection,
-    update_config, update_scheduled_task_config, update_type, update_user, update_vod,
+    admin_cards_page, admin_users_page, batch_delete_source, batch_delete_vods, batch_set_vip,
+    create_collection, create_config, create_indexes, create_or_update_binding, create_type,
+    create_user, create_vod, delete_binding, delete_cards, delete_collection, delete_config,
+    delete_type, delete_users, delete_vod, generate_cards, get_batch_delete_progress_handler,
+    get_bindings, get_cards_list, get_collect_progress, get_collection_binding_status,
+    get_collections, get_config_by_key, get_configs, get_index_status, get_indexes_data,
+    get_running_batch_delete_tasks_handler, get_running_tasks, get_scheduled_task_logs,
+    get_scheduled_task_status, get_statistics, get_types, get_user_by_id, get_users_list,
+    get_vods_admin, list_indexes, search_cards, search_users, start_collection_collect,
+    start_scheduled_task, stop_batch_delete_task_handler, stop_collect_task, stop_scheduled_task,
+    update_collection, update_config, update_scheduled_task_config, update_type, update_user,
+    update_vod,
 };
-use web_handlers::{get_buy_card_config, get_user_vip_info, use_card, vip_check_handler};
-use auth_handlers::{get_current_user, login, logout, register};
-use auth_middleware::AuthMiddleware;
+use auth_handlers::{get_current_user, logout, register};
 use collect_handlers::{get_collect_categories, get_collect_videos, start_collect_task};
 use site_data::SiteDataManager;
+use storage_handlers::{
+    admin_storage_page, create_storage_server, delete_storage_server, generate_archive_upload_url,
+    generate_chunk_upload_url, generate_single_upload_url, get_storage_servers,
+    test_server_connection, update_storage_server,
+};
+use unified_auth_handlers::unified_login;
+use web_handlers::{get_buy_card_config, get_user_vip_info, use_card, vip_check_handler};
 
 use actix_files::Files;
-use actix_session::{storage::CookieSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
 use actix_web::dev::{forward_ready, Service, Transform};
 use actix_web::http::header::{HeaderValue, CACHE_CONTROL};
@@ -46,6 +58,7 @@ use mongodb::Database;
 use std::env;
 use std::future::{ready, Ready};
 use std::rc::Rc;
+
 
 // Static file cache middleware
 pub struct StaticCacheMiddleware;
@@ -200,8 +213,6 @@ async fn main() -> std::io::Result<()> {
         }
     }
 
-    let session_secret_key = Key::generate();
-
     println!("Starting server at http://127.0.0.1:8080");
 
     HttpServer::new(move || {
@@ -216,19 +227,11 @@ async fn main() -> std::io::Result<()> {
             .wrap(middleware::Compress::default())
             // Static file cache middleware
             .wrap(StaticCacheMiddleware)
-            // Authentication middleware
-            .wrap(AuthMiddleware)
+            // Authentication removed - using JWT FromRequest instead
             // Session and Flash Messages Middleware
             .wrap(
                 FlashMessagesFramework::builder(
                     CookieMessageStore::builder(Key::generate()).build(),
-                )
-                .build(),
-            )
-            .wrap(
-                SessionMiddleware::builder(
-                    CookieSessionStore::default(),
-                    session_secret_key.clone(),
                 )
                 .build(),
             )
@@ -269,11 +272,7 @@ async fn main() -> std::io::Result<()> {
                     .prefer_utf8(true),
             )
             // Admin Web routes
-            .service(
-                web::resource("/admin/login")
-                    .route(web::get().to(web_handlers::login_page))
-                    .route(web::post().to(web_handlers::login_post)),
-            )
+            .service(web::resource("/admin/login").route(web::get().to(web_handlers::login_page)))
             .service(web::resource("/admin").route(web::get().to(web_handlers::admin_dashboard)))
             .service(web::resource("/admin/logout").route(web::get().to(web_handlers::logout)))
             .service(
@@ -310,13 +309,14 @@ async fn main() -> std::io::Result<()> {
                 web::resource("/admin/users")
                     .route(web::get().to(admin_handlers::admin_users_page)),
             )
+            .service(web::resource("/admin/storage").route(web::get().to(admin_storage_page)))
             .service(
                 web::resource("/admin/init-data")
-                    .route(web::post().to(web_handlers::init_data_handler)),
+                    .route(web::post().to(web_handlers::init_data_handler_wrapper)),
             )
             .service(
                 web::resource("/admin/refresh-cache")
-                    .route(web::post().to(web_handlers::refresh_cache_handler)),
+                    .route(web::post().to(web_handlers::refresh_cache_handler_wrapper)),
             )
             // API routes
             .service(get_vods)
@@ -339,8 +339,14 @@ async fn main() -> std::io::Result<()> {
                 web::resource("/api/filter-options")
                     .route(web::get().to(api_handlers::get_filter_options)),
             )
-            // Authentication API routes
-            .service(web::resource("/api/auth/login").route(web::post().to(login)))
+            // Unified Authentication API routes
+            .service(web::resource("/api/auth/login").route(web::post().to(unified_login)))
+            .service(web::resource("/api/admin/auth/logout").route(web::post().to(admin_logout)))
+            .service(
+                web::resource("/api/admin/auth/me").route(web::get().to(get_current_admin_info)),
+            )
+            .service(web::resource("/api/admin/auth/refresh").route(web::post().to(refresh_token)))
+            // User Authentication API routes
             .service(web::resource("/api/auth/register").route(web::post().to(register)))
             .service(web::resource("/api/auth/logout").route(web::post().to(logout)))
             .service(web::resource("/api/auth/me").route(web::get().to(get_current_user)))
@@ -413,8 +419,7 @@ async fn main() -> std::io::Result<()> {
                             .route(web::delete().to(batch_delete_vods)),
                     )
                     .service(
-                        web::resource("/vods/batch-set-vip")
-                            .route(web::post().to(batch_set_vip)),
+                        web::resource("/vods/batch-set-vip").route(web::post().to(batch_set_vip)),
                     )
                     .service(
                         web::resource("/batch-delete-source")
@@ -447,22 +452,10 @@ async fn main() -> std::io::Result<()> {
                     // Statistics
                     .service(web::resource("/statistics").route(web::get().to(get_statistics)))
                     // Card Management
-                    .service(
-                        web::resource("/cards")
-                            .route(web::get().to(get_cards_list)),
-                    )
-                    .service(
-                        web::resource("/cards/generate")
-                            .route(web::post().to(generate_cards)),
-                    )
-                    .service(
-                        web::resource("/cards/delete")
-                            .route(web::post().to(delete_cards)),
-                    )
-                    .service(
-                        web::resource("/cards/search")
-                            .route(web::post().to(search_cards)),
-                    )
+                    .service(web::resource("/cards").route(web::get().to(get_cards_list)))
+                    .service(web::resource("/cards/generate").route(web::post().to(generate_cards)))
+                    .service(web::resource("/cards/delete").route(web::post().to(delete_cards)))
+                    .service(web::resource("/cards/search").route(web::post().to(search_cards)))
                     // User Management
                     .service(
                         web::resource("/users")
@@ -470,10 +463,7 @@ async fn main() -> std::io::Result<()> {
                             .route(web::post().to(create_user))
                             .route(web::delete().to(delete_users)),
                     )
-                    .service(
-                        web::resource("/users/search")
-                            .route(web::post().to(search_users)),
-                    )
+                    .service(web::resource("/users/search").route(web::post().to(search_users)))
                     .service(
                         web::resource("/users/{id}")
                             .route(web::get().to(get_user_by_id))
@@ -499,6 +489,21 @@ async fn main() -> std::io::Result<()> {
                     .service(
                         web::resource("/scheduled-task/logs")
                             .route(web::get().to(get_scheduled_task_logs)),
+                    )
+                    // Storage Management - Admin Only
+                    .service(
+                        web::resource("/storage/servers")
+                            .route(web::get().to(get_storage_servers))
+                            .route(web::post().to(create_storage_server)),
+                    )
+                    .service(
+                        web::resource("/storage/servers/{id}")
+                            .route(web::put().to(update_storage_server))
+                            .route(web::delete().to(delete_storage_server)),
+                    )
+                    .service(
+                        web::resource("/storage/servers/{id}/test")
+                            .route(web::post().to(test_server_connection)),
                     ),
             )
             // Collect API routes
@@ -520,23 +525,26 @@ async fn main() -> std::io::Result<()> {
             // User API routes
             .service(
                 web::scope("/api/user")
+                    .service(web::resource("/use-card").route(web::post().to(use_card)))
+                    .service(web::resource("/vip-info").route(web::get().to(get_user_vip_info)))
+                    .service(web::resource("/vip-check").route(web::post().to(vip_check_handler)))
+                    // Storage Upload URLs - Requires user login
                     .service(
-                        web::resource("/use-card")
-                            .route(web::post().to(use_card)),
+                        web::resource("/storage/upload/single/{server_id}")
+                            .route(web::post().to(generate_single_upload_url)),
                     )
                     .service(
-                        web::resource("/vip-info")
-                            .route(web::get().to(get_user_vip_info)),
+                        web::resource("/storage/upload/chunk/{server_id}")
+                            .route(web::post().to(generate_chunk_upload_url)),
                     )
                     .service(
-                        web::resource("/vip-check")
-                            .route(web::post().to(vip_check_handler)),
+                        web::resource("/storage/upload/archive/{server_id}")
+                            .route(web::post().to(generate_archive_upload_url)),
                     ),
             )
             // Config API routes
             .service(
-                web::resource("/api/config/buy_card")
-                    .route(web::get().to(get_buy_card_config)),
+                web::resource("/api/config/buy_card").route(web::get().to(get_buy_card_config)),
             )
     })
     .bind((

@@ -1,5 +1,6 @@
-use actix_session::Session;
-use actix_web::{web, HttpResponse, Responder};
+
+use crate::jwt_auth::AdminUser;
+use actix_web::{web, HttpResponse, Responder, Result, FromRequest, HttpMessage, HttpRequest};
 use bcrypt;
 use chrono;
 use futures::stream::TryStreamExt;
@@ -22,16 +23,6 @@ use crate::models::{Binding, Card, Collection, Config, Type, User, Vod};
 use crate::scheduled_task::ScheduledTaskManager;
 use crate::template::TERA;
 
-// Helper function to check if user is authenticated
-fn check_auth(session: &Session) -> Result<(), HttpResponse> {
-    match session.get::<String>("user_id") {
-        Ok(Some(_)) => Ok(()),
-        _ => Err(HttpResponse::Unauthorized().json(json!({
-            "error": "Unauthorized",
-            "message": "Please login to access this resource"
-        }))),
-    }
-}
 
 // --- DTOs for Admin API ---
 #[derive(Debug, Serialize, Deserialize)]
@@ -110,10 +101,7 @@ pub struct BatchDeleteRequest {
 // --- Category Management API ---
 
 // GET /api/admin/types
-pub async fn get_types(db: web::Data<Database>, session: Session) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
+pub async fn get_types(admin: crate::jwt_auth::AdminUser, db: web::Data<Database>) -> impl Responder {
     let collection = db.collection::<Type>("types");
     let find_options = FindOptions::builder().sort(doc! {"type_sort": 1}).build();
 
@@ -132,10 +120,7 @@ pub async fn get_types(db: web::Data<Database>, session: Session) -> impl Respon
 // --- Collection Management API ---
 
 // GET /api/admin/collections
-pub async fn get_collections(db: web::Data<Database>, session: Session) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
+pub async fn get_collections(admin: crate::jwt_auth::AdminUser, db: web::Data<Database>) -> impl Responder {
     let collection = db.collection::<Collection>("collections");
     let find_options = FindOptions::builder().sort(doc! {"created_at": -1}).build();
 
@@ -153,14 +138,10 @@ pub async fn get_collections(db: web::Data<Database>, session: Session) -> impl 
 }
 
 // POST /api/admin/collections
-pub async fn create_collection(
+pub async fn create_collection(admin: crate::jwt_auth::AdminUser, 
     db: web::Data<Database>,
     collection_req: web::Json<CollectionRequest>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     let collection = db.collection::<Collection>("collections");
 
     let new_collection = Collection {
@@ -197,15 +178,11 @@ pub async fn create_collection(
 }
 
 // POST /api/admin/collections/{id}/collect
-pub async fn start_collection_collect(
+pub async fn start_collection_collect(admin: crate::jwt_auth::AdminUser, 
     path: web::Path<String>,
     db: web::Data<Database>,
     collect_req: Option<web::Json<CollectRequest>>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     let collection_id = match mongodb::bson::oid::ObjectId::parse_str(&path.into_inner()) {
         Ok(id) => id,
@@ -300,15 +277,11 @@ pub struct CollectRequest {
 }
 
 // PUT /api/admin/collections/{id}
-pub async fn update_collection(
+pub async fn update_collection(admin: crate::jwt_auth::AdminUser, 
     path: web::Path<String>,
     db: web::Data<Database>,
     collection_req: web::Json<CollectionRequest>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     let collection = db.collection::<Collection>("collections");
     let collection_id = match mongodb::bson::oid::ObjectId::parse_str(&path.into_inner()) {
         Ok(id) => id,
@@ -358,10 +331,7 @@ pub async fn update_collection(
 }
 
 // GET /api/admin/collect/progress/{task_id}
-pub async fn get_collect_progress(path: web::Path<String>, session: Session) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
+pub async fn get_collect_progress(admin: crate::jwt_auth::AdminUser, path: web::Path<String>) -> impl Responder {
 
     let task_id = path.into_inner();
 
@@ -384,10 +354,7 @@ pub async fn get_collect_progress(path: web::Path<String>, session: Session) -> 
 }
 
 // GET /api/admin/collect/running-tasks
-pub async fn get_running_tasks(session: Session) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
+pub async fn get_running_tasks(admin: crate::jwt_auth::AdminUser) -> impl Responder {
 
     // 获取所有运行中的任务（从collect_handlers中的全局存储获取）
     let tasks = crate::collect_handlers::get_all_running_tasks().await;
@@ -399,10 +366,7 @@ pub async fn get_running_tasks(session: Session) -> impl Responder {
 }
 
 // POST /api/admin/collect/stop/{task_id}
-pub async fn stop_collect_task(path: web::Path<String>, session: Session) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
+pub async fn stop_collect_task(admin: crate::jwt_auth::AdminUser, path: web::Path<String>) -> impl Responder {
 
     let task_id = path.into_inner();
 
@@ -423,14 +387,10 @@ pub async fn stop_collect_task(path: web::Path<String>, session: Session) -> imp
 }
 
 // DELETE /api/admin/collections/{id}
-pub async fn delete_collection(
+pub async fn delete_collection(admin: crate::jwt_auth::AdminUser, 
     path: web::Path<String>,
     db: web::Data<Database>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     let collection = db.collection::<Collection>("collections");
     let collection_id = match mongodb::bson::oid::ObjectId::parse_str(&path.into_inner()) {
         Ok(id) => id,
@@ -470,14 +430,10 @@ pub struct VodsQuery {
 }
 
 // GET /api/admin/vods
-pub async fn get_vods_admin(
+pub async fn get_vods_admin(admin: crate::jwt_auth::AdminUser, 
     db: web::Data<Database>,
     query: web::Query<VodsQuery>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     let page = query.page.unwrap_or(1).max(1);
     let limit = query.limit.unwrap_or(20).min(100);
@@ -555,14 +511,10 @@ pub async fn get_vods_admin(
 }
 
 // POST /api/admin/vods
-pub async fn create_vod(
+pub async fn create_vod(admin: crate::jwt_auth::AdminUser, 
     db: web::Data<Database>,
     vod_req: web::Json<VodRequest>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     let collection = db.collection::<Vod>("vods");
 
     let new_vod = Vod {
@@ -605,15 +557,11 @@ pub async fn create_vod(
 }
 
 // PUT /api/admin/vods/{id}
-pub async fn update_vod(
+pub async fn update_vod(admin: crate::jwt_auth::AdminUser, 
     path: web::Path<String>,
     db: web::Data<Database>,
     vod_req: web::Json<VodRequest>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     let collection = db.collection::<Vod>("vods");
     let vod_id = match mongodb::bson::oid::ObjectId::parse_str(&path.into_inner()) {
         Ok(id) => id,
@@ -665,14 +613,10 @@ pub async fn update_vod(
 }
 
 // DELETE /api/admin/vods/{id}
-pub async fn delete_vod(
+pub async fn delete_vod(admin: crate::jwt_auth::AdminUser, 
     path: web::Path<String>,
     db: web::Data<Database>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     let collection = db.collection::<Vod>("vods");
     let vod_id = match mongodb::bson::oid::ObjectId::parse_str(&path.into_inner()) {
         Ok(id) => id,
@@ -698,14 +642,10 @@ pub async fn delete_vod(
 }
 
 // DELETE /api/admin/vods/batch
-pub async fn batch_delete_vods(
+pub async fn batch_delete_vods(admin: crate::jwt_auth::AdminUser, 
     db: web::Data<Database>,
     batch_req: web::Json<BatchDeleteRequest>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     let collection = db.collection::<Vod>("vods");
     let mut object_ids = Vec::new();
@@ -756,10 +696,7 @@ pub async fn batch_delete_vods(
 // --- Website Configuration Management API ---
 
 // GET /api/admin/configs
-pub async fn get_configs(db: web::Data<Database>, session: Session) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
+pub async fn get_configs(admin: crate::jwt_auth::AdminUser, db: web::Data<Database>) -> impl Responder {
     let collection = db.collection::<Config>("configs");
     let find_options = FindOptions::builder().sort(doc! {"config_sort": 1}).build();
 
@@ -776,14 +713,10 @@ pub async fn get_configs(db: web::Data<Database>, session: Session) -> impl Resp
 }
 
 // GET /api/admin/configs/{key}
-pub async fn get_config_by_key(
+pub async fn get_config_by_key(admin: crate::jwt_auth::AdminUser, 
     path: web::Path<String>,
     db: web::Data<Database>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     let collection = db.collection::<Config>("configs");
     let config_key = path.into_inner();
 
@@ -801,14 +734,10 @@ pub async fn get_config_by_key(
 }
 
 // POST /api/admin/configs
-pub async fn create_config(
+pub async fn create_config(admin: crate::jwt_auth::AdminUser, 
     db: web::Data<Database>,
     config_req: web::Json<ConfigRequest>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     let collection = db.collection::<Config>("configs");
 
     let new_config = Config {
@@ -840,15 +769,11 @@ pub async fn create_config(
 }
 
 // PUT /api/admin/configs/{key}
-pub async fn update_config(
+pub async fn update_config(admin: crate::jwt_auth::AdminUser, 
     path: web::Path<String>,
     db: web::Data<Database>,
     config_req: web::Json<ConfigRequest>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     let collection = db.collection::<Config>("configs");
     let config_key = path.into_inner();
 
@@ -885,14 +810,10 @@ pub async fn update_config(
 }
 
 // DELETE /api/admin/configs/{key}
-pub async fn delete_config(
+pub async fn delete_config(admin: crate::jwt_auth::AdminUser, 
     path: web::Path<String>,
     db: web::Data<Database>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     let collection = db.collection::<Config>("configs");
     let config_key = path.into_inner();
 
@@ -918,14 +839,10 @@ pub async fn delete_config(
 }
 
 // POST /api/admin/types
-pub async fn create_type(
+pub async fn create_type(admin: crate::jwt_auth::AdminUser, 
     db: web::Data<Database>,
     type_req: web::Json<TypeRequest>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     let collection = db.collection::<Type>("types");
 
     // In a real system, you'd generate type_id and handle type_mid, etc.
@@ -974,15 +891,11 @@ pub async fn create_type(
 }
 
 // PUT /api/admin/types/{id}
-pub async fn update_type(
+pub async fn update_type(admin: crate::jwt_auth::AdminUser, 
     path: web::Path<String>,
     db: web::Data<Database>,
     type_req: web::Json<TypeRequest>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     let collection = db.collection::<Type>("types");
     let type_id: i32 = match path.into_inner().parse() {
         Ok(id) => id,
@@ -1051,14 +964,10 @@ pub async fn update_type(
 }
 
 // DELETE /api/admin/types/{id}
-pub async fn delete_type(
+pub async fn delete_type(admin: crate::jwt_auth::AdminUser, 
     path: web::Path<String>,
     db: web::Data<Database>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     let collection = db.collection::<Type>("types");
     let type_id: i32 = match path.into_inner().parse() {
         Ok(id) => id,
@@ -1088,14 +997,10 @@ pub async fn delete_type(
 
 // --- Binding Management API ---
 // DELETE /api/admin/bindings/{id}
-pub async fn delete_binding(
+pub async fn delete_binding(admin: crate::jwt_auth::AdminUser, 
     db: web::Data<Database>,
-    session: Session,
     path: web::Path<String>,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     let collection = db.collection::<Binding>("bindings");
     let binding_id = path.into_inner();
 
@@ -1117,10 +1022,7 @@ pub async fn delete_binding(
     }
 }
 // GET /api/admin/bindings
-pub async fn get_bindings(db: web::Data<Database>, session: Session) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
+pub async fn get_bindings(admin: crate::jwt_auth::AdminUser, db: web::Data<Database>) -> impl Responder {
     let collection = db.collection::<Binding>("bindings");
 
     match collection.find(None, None).await {
@@ -1136,14 +1038,10 @@ pub async fn get_bindings(db: web::Data<Database>, session: Session) -> impl Res
 }
 
 // GET /api/admin/collections/{id}/binding-status
-pub async fn get_collection_binding_status(
+pub async fn get_collection_binding_status(admin: crate::jwt_auth::AdminUser, 
     path: web::Path<String>,
     db: web::Data<Database>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     let collection_id = match mongodb::bson::oid::ObjectId::parse_str(&path.into_inner()) {
         Ok(id) => id,
@@ -1201,14 +1099,10 @@ pub async fn get_collection_binding_status(
 }
 
 // POST /api/admin/bindings
-pub async fn create_or_update_binding(
+pub async fn create_or_update_binding(admin: crate::jwt_auth::AdminUser, 
     db: web::Data<Database>,
     binding_req: web::Json<BindingRequest>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     let collection = db.collection::<Binding>("bindings");
 
     let binding_id = format!("{}_{}", binding_req.source_flag, binding_req.external_id);
@@ -1271,10 +1165,7 @@ pub async fn create_or_update_binding(
 // --- Index Management API ---
 
 // POST /api/admin/indexes/create
-pub async fn create_indexes(db: web::Data<Database>, session: Session) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
+pub async fn create_indexes(admin: crate::jwt_auth::AdminUser, db: web::Data<Database>) -> impl Responder {
 
     let index_manager = IndexManager::new(db.get_ref().clone());
 
@@ -1291,10 +1182,7 @@ pub async fn create_indexes(db: web::Data<Database>, session: Session) -> impl R
 }
 
 // GET /api/admin/indexes/status
-pub async fn get_index_status(db: web::Data<Database>, session: Session) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
+pub async fn get_index_status(admin: crate::jwt_auth::AdminUser, db: web::Data<Database>) -> impl Responder {
 
     let index_manager = IndexManager::new(db.get_ref().clone());
 
@@ -1311,10 +1199,7 @@ pub async fn get_index_status(db: web::Data<Database>, session: Session) -> impl
 }
 
 // GET /api/admin/indexes/list
-pub async fn list_indexes(db: web::Data<Database>, session: Session) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
+pub async fn list_indexes(admin: crate::jwt_auth::AdminUser, db: web::Data<Database>) -> impl Responder {
 
     let index_manager = IndexManager::new(db.get_ref().clone());
 
@@ -1335,10 +1220,7 @@ pub async fn list_indexes(db: web::Data<Database>, session: Session) -> impl Res
 }
 
 // GET /api/admin/indexes/data
-pub async fn get_indexes_data(db: web::Data<Database>, session: Session) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
+pub async fn get_indexes_data(admin: crate::jwt_auth::AdminUser, db: web::Data<Database>) -> impl Responder {
 
     let index_manager = IndexManager::new(db.get_ref().clone());
     match index_manager.get_all_indexes().await {
@@ -1354,10 +1236,7 @@ pub async fn get_indexes_data(db: web::Data<Database>, session: Session) -> impl
 }
 
 // GET /api/admin/statistics
-pub async fn get_statistics(db: web::Data<Database>, session: Session) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
+pub async fn get_statistics(admin: crate::jwt_auth::AdminUser, db: web::Data<Database>) -> impl Responder {
 
     let mut stats = json!({
         "success": true,
@@ -1431,13 +1310,9 @@ pub async fn get_statistics(db: web::Data<Database>, session: Session) -> impl R
 // === 定时任务管理 API ===
 
 // GET /api/admin/scheduled-task/status
-pub async fn get_scheduled_task_status(
+pub async fn get_scheduled_task_status(admin: crate::jwt_auth::AdminUser, 
     task_manager: web::Data<std::sync::Arc<ScheduledTaskManager>>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     match task_manager.get_task_status().await {
         Ok(status) => HttpResponse::Ok().json(json!({
@@ -1452,13 +1327,9 @@ pub async fn get_scheduled_task_status(
 }
 
 // POST /api/admin/scheduled-task/start
-pub async fn start_scheduled_task(
+pub async fn start_scheduled_task(admin: crate::jwt_auth::AdminUser, 
     task_manager: web::Data<std::sync::Arc<ScheduledTaskManager>>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     match task_manager.start_scheduled_task().await {
         Ok(_) => HttpResponse::Ok().json(json!({
             "success": true,
@@ -1472,13 +1343,9 @@ pub async fn start_scheduled_task(
 }
 
 // POST /api/admin/scheduled-task/stop
-pub async fn stop_scheduled_task(
+pub async fn stop_scheduled_task(admin: crate::jwt_auth::AdminUser, 
     task_manager: web::Data<std::sync::Arc<ScheduledTaskManager>>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     match task_manager.stop_scheduled_task().await {
         Ok(_) => HttpResponse::Ok().json(json!({
             "success": true,
@@ -1498,14 +1365,10 @@ pub struct ScheduledTaskConfigRequest {
     pub interval_hours: Option<i32>,
 }
 
-pub async fn update_scheduled_task_config(
+pub async fn update_scheduled_task_config(admin: crate::jwt_auth::AdminUser, 
     task_manager: web::Data<std::sync::Arc<ScheduledTaskManager>>,
-    session: Session,
     config: web::Json<ScheduledTaskConfigRequest>,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     match task_manager
         .update_config(config.enabled, config.interval_hours)
         .await
@@ -1526,14 +1389,10 @@ pub async fn update_scheduled_task_config(
 }
 
 // GET /api/admin/scheduled-task/logs
-pub async fn get_scheduled_task_logs(
+pub async fn get_scheduled_task_logs(admin: crate::jwt_auth::AdminUser, 
     task_manager: web::Data<std::sync::Arc<ScheduledTaskManager>>,
-    session: Session,
     query: web::Query<ScheduledTaskLogsQuery>,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
     match task_manager.get_task_logs(query.limit).await {
         Ok(logs) => HttpResponse::Ok().json(json!({
             "success": true,
@@ -1925,14 +1784,10 @@ async fn execute_batch_delete_inner(
 }
 
 // POST /api/admin/batch-delete-source
-pub async fn batch_delete_source(
+pub async fn batch_delete_source(admin: crate::jwt_auth::AdminUser, 
     db: web::Data<Database>,
     request: web::Json<BatchDeleteSourceRequest>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     let source_name = request.source_name.trim();
     if source_name.is_empty() {
@@ -1965,13 +1820,9 @@ pub async fn batch_delete_source(
 }
 
 // GET /api/admin/batch-delete/progress/{task_id}
-pub async fn get_batch_delete_progress_handler(
+pub async fn get_batch_delete_progress_handler(admin: crate::jwt_auth::AdminUser, 
     path: web::Path<String>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     let task_id = path.into_inner();
 
@@ -1992,10 +1843,7 @@ pub async fn get_batch_delete_progress_handler(
 }
 
 // GET /api/admin/batch-delete/running-tasks
-pub async fn get_running_batch_delete_tasks_handler(session: Session) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
+pub async fn get_running_batch_delete_tasks_handler(admin: crate::jwt_auth::AdminUser) -> impl Responder {
 
     let tasks = get_all_batch_delete_tasks().await;
 
@@ -2006,13 +1854,9 @@ pub async fn get_running_batch_delete_tasks_handler(session: Session) -> impl Re
 }
 
 // POST /api/admin/batch-delete/stop/{task_id}
-pub async fn stop_batch_delete_task_handler(
+pub async fn stop_batch_delete_task_handler(admin: crate::jwt_auth::AdminUser, 
     path: web::Path<String>,
-    session: Session,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     let task_id = path.into_inner();
 
@@ -2035,13 +1879,9 @@ pub async fn stop_batch_delete_task_handler(
 
 // GET /admin/cards
 pub async fn admin_cards_page(
-    session: Session,
     db: web::Data<Database>,
     site_data_manager: web::Data<crate::site_data::SiteDataManager>,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     match crate::web_handlers::with_site_data(
         db.clone(),
@@ -2070,14 +1910,10 @@ pub async fn admin_cards_page(
 }
 
 // GET /api/admin/cards
-pub async fn get_cards_list(
-    session: Session,
+pub async fn get_cards_list(admin: crate::jwt_auth::AdminUser,
     db: web::Data<Database>,
     query: web::Query<CardPageParams>,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     let page = query.page.unwrap_or(1);
     let limit = query.limit.unwrap_or(20);
@@ -2146,14 +1982,10 @@ pub async fn get_cards_list(
 }
 
 // POST /api/admin/cards/generate
-pub async fn generate_cards(
-    session: Session,
+pub async fn generate_cards(admin: crate::jwt_auth::AdminUser,
     db: web::Data<Database>,
     request: web::Json<GenerateCardRequest>,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     // 验证参数
     if request.count <= 0 || request.count > 1000 {
@@ -2208,14 +2040,10 @@ pub async fn generate_cards(
 }
 
 // POST /api/admin/cards/delete
-pub async fn delete_cards(
-    session: Session,
+pub async fn delete_cards(admin: crate::jwt_auth::AdminUser,
     db: web::Data<Database>,
     request: web::Json<DeleteCardRequest>,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     if request.card_ids.is_empty() {
         return HttpResponse::BadRequest().json(json!({
@@ -2253,14 +2081,10 @@ pub async fn delete_cards(
 }
 
 // POST /api/admin/cards/search
-pub async fn search_cards(
-    session: Session,
+pub async fn search_cards(admin: crate::jwt_auth::AdminUser,
     db: web::Data<Database>,
     request: web::Json<SearchCardRequest>,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     if request.code.trim().is_empty() {
         return HttpResponse::BadRequest().json(json!({
@@ -2354,30 +2178,26 @@ pub struct BatchSetVipRequest {
 
 // Batch set VIP content
 pub async fn batch_set_vip(
-    session: Session,
+    _admin: AdminUser,
     db: web::Data<Database>,
     request: web::Json<BatchSetVipRequest>,
-) -> impl Responder {
-    // Check authentication
-    if let Err(e) = check_auth(&session) {
-        return e;
-    }
+) -> Result<HttpResponse> {
 
     let vod_ids = &request.vod_ids;
     let need_vip = request.need_vip;
 
     if vod_ids.is_empty() {
-        return HttpResponse::BadRequest().json(json!({
+        return Ok(HttpResponse::BadRequest().json(json!({
             "success": false,
             "message": "请选择要设置的视频"
-        }));
+        })));
     }
 
     if need_vip < 0 || need_vip > 5 {
-        return HttpResponse::BadRequest().json(json!({
+        return Ok(HttpResponse::BadRequest().json(json!({
             "success": false,
             "message": "VIP等级必须在0-5之间"
-        }));
+        })));
     }
 
     let vod_collection = db.collection::<Vod>("vods");
@@ -2391,10 +2211,10 @@ pub async fn batch_set_vip(
     let object_ids = match object_ids {
         Ok(ids) => ids,
         Err(e) => {
-            return HttpResponse::BadRequest().json(json!({
+            return Ok(HttpResponse::BadRequest().json(json!({
                 "success": false,
                 "message": format!("无效的视频ID: {}", e)
-            }));
+            })));
         }
     };
 
@@ -2408,30 +2228,26 @@ pub async fn batch_set_vip(
         .await;
 
     match result {
-        Ok(update_result) => HttpResponse::Ok().json(json!({
+        Ok(update_result) => Ok(HttpResponse::Ok().json(json!({
             "success": true,
             "message": format!("成功设置 {} 个视频的VIP等级", update_result.modified_count),
             "modified_count": update_result.modified_count
-        })),
+        }))),
         Err(e) => {
             eprintln!("Database error when batch setting VIP: {}", e);
-            HttpResponse::InternalServerError().json(json!({
+            Ok(HttpResponse::InternalServerError().json(json!({
                 "success": false,
                 "message": "服务器错误"
-            }))
+            })))
         }
     }
 }
 
 // User management functions
 pub async fn admin_users_page(
-    session: Session,
     db: web::Data<Database>,
     site_data_manager: web::Data<crate::site_data::SiteDataManager>,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     match crate::web_handlers::with_site_data(
         db.clone(),
@@ -2459,14 +2275,10 @@ pub async fn admin_users_page(
     }
 }
 
-pub async fn get_users_list(
-    session: Session,
+pub async fn get_users_list(admin: crate::jwt_auth::AdminUser,
     db: web::Data<Database>,
     query: web::Query<crate::dto::UserPageParams>,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     let page = query.page.unwrap_or(1);
     let limit = query.limit.unwrap_or(20);
@@ -2531,14 +2343,10 @@ pub async fn get_users_list(
     })
 }
 
-pub async fn create_user(
-    session: Session,
+pub async fn create_user(admin: crate::jwt_auth::AdminUser,
     db: web::Data<Database>,
     request: web::Json<crate::dto::CreateUserRequest>,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     // Check if username already exists
     let user_collection = db.collection::<User>("users");
@@ -2624,14 +2432,10 @@ pub async fn create_user(
     }
 }
 
-pub async fn update_user(
-    session: Session,
+pub async fn update_user(admin: crate::jwt_auth::AdminUser,
     db: web::Data<Database>,
     request: web::Json<crate::dto::UpdateUserRequest>,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     // Parse user ID
     let user_id = match mongodb::bson::oid::ObjectId::parse_str(&request.user_id) {
@@ -2768,14 +2572,10 @@ pub async fn update_user(
     }
 }
 
-pub async fn delete_users(
-    session: Session,
+pub async fn delete_users(admin: crate::jwt_auth::AdminUser,
     db: web::Data<Database>,
     request: web::Json<crate::dto::DeleteUserRequest>,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     // Convert string IDs to ObjectId
     let mut object_ids = Vec::new();
@@ -2820,14 +2620,10 @@ pub async fn delete_users(
 }
 
 // Get single user by ID
-pub async fn get_user_by_id(
-    session: Session,
+pub async fn get_user_by_id(admin: crate::jwt_auth::AdminUser,
     db: web::Data<Database>,
     user_id: web::Path<String>,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     // Parse user ID
     let object_id = match mongodb::bson::oid::ObjectId::parse_str(&**user_id) {
@@ -2881,14 +2677,10 @@ pub async fn get_user_by_id(
     }
 }
 
-pub async fn search_users(
-    session: Session,
+pub async fn search_users(admin: crate::jwt_auth::AdminUser,
     db: web::Data<Database>,
     request: web::Json<crate::dto::SearchUserRequest>,
 ) -> impl Responder {
-    if let Err(response) = check_auth(&session) {
-        return response;
-    }
 
     let page = request.page.unwrap_or(1);
     let limit = request.limit.unwrap_or(20);
@@ -2961,3 +2753,5 @@ pub async fn search_users(
         total: total as i64,
     })
 }
+
+// Admin page wrappers with JWT authentication

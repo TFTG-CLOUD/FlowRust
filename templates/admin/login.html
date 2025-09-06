@@ -3,25 +3,37 @@
 {% block title %}管理员登录 - MacCMS{% endblock title %}
 
 {% block content %}
-<div class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+<script>
+    // 在登录页面重写 checkAuth 函数，避免自动重定向
+    function checkAuth() {
+        // 登录页面不进行认证检查，直接返回 true
+        return true;
+    }
+</script>
+<div
+    class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
     <div class="max-w-md w-full space-y-8">
         <div class="text-center">
             <div class="mx-auto h-12 w-12 bg-indigo-600 rounded-lg flex items-center justify-center">
                 <svg class="h-8 w-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
+                    </path>
                 </svg>
             </div>
             <h2 class="mt-6 text-3xl font-extrabold text-gray-900">管理员登录</h2>
             <p class="mt-2 text-sm text-gray-600">MacCMS 后台管理系统</p>
         </div>
-        
+
         <div class="bg-white shadow-xl rounded-lg p-8">
             {% if error %}
             <div class="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md" role="alert">
                 <div class="flex">
                     <div class="flex-shrink-0">
                         <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                            <path fill-rule="evenodd"
+                                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                                clip-rule="evenodd" />
                         </svg>
                     </div>
                     <div class="ml-3">
@@ -30,8 +42,8 @@
                 </div>
             </div>
             {% endif %}
-            
-            <form action="/admin/login" method="post" class="space-y-6">
+
+            <form id="loginForm" class="space-y-6" onsubmit="handleLogin(event)">
                 <div>
                     <label for="username" class="block text-sm font-medium text-gray-700 mb-2">
                         用户名
@@ -39,15 +51,16 @@
                     <div class="relative">
                         <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
                             </svg>
                         </div>
                         <input type="text" id="username" name="username" required
-                               class="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
-                               placeholder="请输入用户名" autocomplete="username">
+                            class="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                            placeholder="请输入用户名" autocomplete="username">
                     </div>
                 </div>
-                
+
                 <div>
                     <label for="password" class="block text-sm font-medium text-gray-700 mb-2">
                         密码
@@ -55,38 +68,43 @@
                     <div class="relative">
                         <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <svg class="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z">
+                                </path>
                             </svg>
                         </div>
                         <input type="password" id="password" name="password" required
-                               class="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
-                               placeholder="请输入密码" autocomplete="current-password">
+                            class="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                            placeholder="请输入密码" autocomplete="current-password">
                     </div>
                 </div>
-                
+
                 <div class="flex items-center justify-between">
                     <div class="flex items-center">
-                        <input id="remember-me" name="remember-me" type="checkbox" 
-                               class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                        <input id="remember-me" name="remember-me" type="checkbox"
+                            class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
                         <label for="remember-me" class="ml-2 block text-sm text-gray-700">
                             记住我
                         </label>
                     </div>
                 </div>
-                
+
                 <div>
-                    <button type="submit" 
-                            class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">
+                    <button type="submit"
+                        class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">
                         <span class="absolute left-0 inset-y-0 flex items-center pl-3">
-                            <svg class="h-5 w-5 text-indigo-500 group-hover:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path>
+                            <svg class="h-5 w-5 text-indigo-500 group-hover:text-indigo-400" fill="none"
+                                stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1">
+                                </path>
                             </svg>
                         </span>
                         立即登录
                     </button>
                 </div>
             </form>
-            
+
             <div class="mt-6 text-center">
                 <p class="text-xs text-gray-500">
                     © 2024 MacCMS. 基于 Rust 构建的现代化内容管理系统
@@ -97,33 +115,127 @@
 </div>
 
 <script>
-// 简单的表单验证
-document.querySelector('form').addEventListener('submit', function(e) {
-    const username = document.getElementById('username').value.trim();
-    const password = document.getElementById('password').value.trim();
-    
-    if (!username) {
-        e.preventDefault();
-        alert('请输入用户名');
-        return;
-    }
-    
-    if (!password) {
-        e.preventDefault();
-        alert('请输入密码');
-        return;
-    }
-    
-    if (password.length < 6) {
-        e.preventDefault();
-        alert('密码长度不能少于6位');
-        return;
-    }
-});
+    // JWT 登录处理
+    async function handleLogin(event) {
+        event.preventDefault();
 
-// 自动聚焦到用户名输入框
-window.addEventListener('load', function() {
-    document.getElementById('username').focus();
-});
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value.trim();
+
+        if (!username) {
+            showError('请输入用户名');
+            return;
+        }
+
+        if (!password) {
+            showError('请输入密码');
+            return;
+        }
+
+        if (password.length < 6) {
+            showError('密码长度不能少于6位');
+            return;
+        }
+
+        // 禁用登录按钮
+        const submitButton = document.querySelector('button[type="submit"]');
+        const originalText = submitButton.innerHTML;
+        submitButton.disabled = true;
+        submitButton.innerHTML = '<span class="absolute left-0 inset-y-0 flex items-center pl-3"><svg class="animate-spin h-5 w-5 text-indigo-500" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></span>登录中...';
+
+        try {
+            const response = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    username: username,
+                    password: password,
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success && data.token && data.is_admin) {
+                // 保存 JWT token 到 localStorage
+                localStorage.setItem('admin_token', data.token);
+                localStorage.setItem('admin_user', JSON.stringify(data.user));
+
+                // 跳转到管理后台首页
+                window.location.href = '/admin';
+            } else {
+                showError(data.msg || '登录失败，请检查用户名和密码');
+            }
+        } catch (error) {
+            console.error('Login error:', error);
+            showError('网络错误，请稍后重试');
+        } finally {
+            // 恢复登录按钮
+            submitButton.disabled = false;
+            submitButton.innerHTML = originalText;
+        }
+    }
+
+    // 显示错误信息
+    function showError(message) {
+        let errorDiv = document.querySelector('.bg-red-50');
+        if (!errorDiv) {
+            errorDiv = document.createElement('div');
+            errorDiv.className = 'mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md';
+            errorDiv.setAttribute('role', 'alert');
+
+            const form = document.getElementById('loginForm');
+            form.parentNode.insertBefore(errorDiv, form);
+        }
+
+        errorDiv.innerHTML = `
+        <div class="flex">
+            <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                </svg>
+            </div>
+            <div class="ml-3">
+                <p class="text-sm">${message}</p>
+            </div>
+        </div>
+    `;
+    }
+
+    // 检查是否已登录
+    function checkAuth() {
+        const token = localStorage.getItem('admin_token');
+        if (token) {
+            // 验证 token 是否有效
+            fetch('/api/admin/info', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        window.location.href = '/admin';
+                    } else {
+                        // token 无效，清除本地存储
+                        localStorage.removeItem('admin_token');
+                        localStorage.removeItem('admin_user');
+                    }
+                })
+                .catch(error => {
+                    console.error('Auth check error:', error);
+                    localStorage.removeItem('admin_token');
+                    localStorage.removeItem('admin_user');
+                });
+        }
+    }
+
+    // 自动聚焦到用户名输入框
+    window.addEventListener('load', function () {
+        document.getElementById('username').focus();
+        // 在登录页面不自动检查认证状态，避免无限重定向
+        // checkAuth(); // 注释掉这行
+    });
 </script>
 {% endblock content %}

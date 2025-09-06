@@ -522,7 +522,7 @@
 
     // 加载分类数据
     function loadCategories() {
-        fetch('/api/admin/types')
+        apiFetch('/api/admin/types')
             .then(response => response.json())
             .then(data => {
                 categories = data;
@@ -567,7 +567,7 @@
         if (categoryId) url += `&type_id=${categoryId}`;
         if (status) url += `&status=${status}`;
 
-        fetch(url)
+        apiFetch(url)
             .then(response => response.json())
             .then(data => {
                 if (data.code === 1) {
@@ -595,7 +595,7 @@
     // 更新统计数据
     function updateStats() {
         // 获取所有视频的统计数据，而不仅仅是当前页的
-        fetch('/api/admin/vods?limit=1')
+        apiFetch('/api/admin/vods?limit=1')
             .then(response => response.json())
             .then(data => {
                 if (data.code === 1) {
@@ -817,7 +817,7 @@
 
         const vodIds = Array.from(selectedVods);
 
-        fetch('/api/admin/vods', {
+        apiFetch('/api/admin/vods', {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json'
@@ -1005,7 +1005,7 @@
     function deleteVod() {
         if (!currentDeleteId) return;
 
-        fetch(`/api/admin/vods/${currentDeleteId}`, {
+        apiFetch(`/api/admin/vods/${currentDeleteId}`, {
             method: 'DELETE'
         })
             .then(response => response.json())
@@ -1049,7 +1049,7 @@
         const url = isEditing ? `/api/admin/vods/${editingId}` : '/api/admin/vods';
         const method = isEditing ? 'PUT' : 'POST';
 
-        fetch(url, {
+        apiFetch(url, {
             method: method,
             headers: {
                 'Content-Type': 'application/json'
@@ -1118,7 +1118,7 @@
         document.getElementById('deleteSourceModal').classList.remove('hidden');
 
         // 检查是否有运行中的删除任务
-        fetch('/api/admin/batch-delete/running-tasks')
+        apiFetch('/api/admin/batch-delete/running-tasks')
             .then(response => response.json())
             .then(data => {
                 const hasRunningTask = data.tasks && data.tasks.some(task => task.status === 'running');
@@ -1158,7 +1158,7 @@
 
         showToast('启动批量删除播放源任务...', 'info');
 
-        fetch('/api/admin/batch-delete-source', {
+        apiFetch('/api/admin/batch-delete-source', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -1196,7 +1196,7 @@
 
     // 轮询批量删除进度
     function pollBatchDeleteProgress(taskId) {
-        fetch(`/api/admin/batch-delete/progress/${taskId}`)
+        apiFetch(`/api/admin/batch-delete/progress/${taskId}`)
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
@@ -1255,7 +1255,7 @@
             return;
         }
 
-        fetch(`/api/admin/batch-delete/stop/${batchDeleteTaskId}`, {
+        apiFetch(`/api/admin/batch-delete/stop/${batchDeleteTaskId}`, {
             method: 'POST'
         })
             .then(response => response.json())
@@ -1356,7 +1356,7 @@
         }
 
         try {
-            const response = await fetch('/api/admin/vods/batch-set-vip', {
+            const response = await apiFetch('/api/admin/vods/batch-set-vip', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

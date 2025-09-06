@@ -465,7 +465,7 @@ function saveCollection() {
         method = 'PUT';
     }
     
-    fetch(url, {
+    apiFetch(url, {
         method: method,
         headers: {
             'Content-Type': 'application/json'
@@ -508,7 +508,7 @@ function hideDeleteModal() {
 function confirmDelete() {
     if (!currentDeleteId) return;
     
-    fetch('/api/admin/collections/' + currentDeleteId, {
+    apiFetch('/api/admin/collections/' + currentDeleteId, {
         method: 'DELETE'
     })
     .then(function(response) {
@@ -537,7 +537,7 @@ function confirmDelete() {
 function testCollection(id) {
     showToast('正在测试连接...', 'info');
     
-    fetch('/api/admin/collections/' + id + '/test', {
+    apiFetch('/api/admin/collections/' + id + '/test', {
         method: 'POST'
     })
     .then(function(response) {
@@ -565,7 +565,7 @@ function collectFromSource(id) {
     showToast('开始采集...', 'info');
     document.getElementById('task-status').classList.remove('hidden');
     
-    fetch('/api/admin/collections/' + id + '/collect', {
+    apiFetch('/api/admin/collections/' + id + '/collect', {
         method: 'POST'
     })
     .then(function(response) {
@@ -600,7 +600,7 @@ function batchCollect() {
     showToast('开始批量采集...', 'info');
     document.getElementById('task-status').classList.remove('hidden');
     
-    fetch('/api/admin/collections/batch-collect', {
+    apiFetch('/api/admin/collections/batch-collect', {
         method: 'POST'
     })
     .then(function(response) {
@@ -627,7 +627,7 @@ function batchCollect() {
 // 监控任务进度
 function monitorTask(taskId) {
     var interval = setInterval(function() {
-        fetch('/api/admin/tasks/' + taskId)
+        apiFetch('/api/admin/tasks/' + taskId)
         .then(function(response) {
             if (response.ok) {
                 return response.json();

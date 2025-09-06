@@ -1,6 +1,7 @@
+use crate::jwt_auth::AdminUser;
 use crate::models::{Card, Config, Type, User, Vod};
 use crate::template::TERA;
-use actix_web::{web, HttpResponse, Responder, HttpMessage};
+use actix_web::{web, HttpResponse, Responder, HttpMessage, Result, FromRequest};
 use chrono::Datelike;
 use futures::stream::TryStreamExt;
 use mongodb::{bson::doc, options::FindOptions, Database};
@@ -68,7 +69,6 @@ fn extract_line_info(error_str: &str) -> Option<String> {
 use crate::dto::ListPageParams;
 use crate::init_data;
 use crate::site_data::SiteDataManager;
-use actix_session::Session;
 use actix_web_flash_messages::FlashMessage;
 use std::error::Error;
 
@@ -978,12 +978,6 @@ pub async fn search_page_handler(
 
 // --- Admin Web Handlers ---
 
-#[derive(Debug, Deserialize)]
-pub struct LoginForm {
-    username: String,
-    password: String,
-}
-
 pub async fn login_page() -> impl Responder {
     let context = tera::Context::new();
     match TERA.render("admin/login.html", &context) {
@@ -1000,84 +994,9 @@ pub async fn login_page() -> impl Responder {
     }
 }
 
-pub async fn login_post(
-    db: web::Data<Database>,
-    form: web::Form<LoginForm>,
-    session: Session,
-) -> impl Responder {
-    println!(
-        "[DEBUG] Login attempt - Username: '{}', Password length: {}",
-        form.username,
-        form.password.len()
-    );
 
-    let user_collection = db.collection::<User>("users");
 
-    let user = match user_collection
-        .find_one(doc! {"user_name": &form.username}, None)
-        .await
-    {
-        Ok(Some(u)) => {
-            println!("[DEBUG] User found in database: {}", u.user_name);
-            u
-        }
-        Ok(None) => {
-            println!(
-                "[DEBUG] User not found in database for username: {}",
-                form.username
-            );
-            FlashMessage::error("Invalid username or password.").send();
-            return HttpResponse::Found()
-                .append_header(("Location", "/admin/login"))
-                .finish();
-        }
-        Err(e) => {
-            println!("[DEBUG] Database error when finding user: {}", e);
-            FlashMessage::error("Invalid username or password.").send();
-            return HttpResponse::Found()
-                .append_header(("Location", "/admin/login"))
-                .finish();
-        }
-    };
-
-    println!("[DEBUG] Stored password hash: {}", user.user_pwd);
-    let password_valid = bcrypt::verify(&form.password, &user.user_pwd).unwrap_or(false);
-    println!("[DEBUG] Password verification result: {}", password_valid);
-
-    if password_valid {
-        let user_id_str = user.id.unwrap().to_string();
-        println!("[DEBUG] Setting session user_id: {}", user_id_str);
-
-        match session.insert("user_id", user_id_str) {
-            Ok(_) => {
-                println!("[DEBUG] Session set successfully, redirecting to /admin");
-                HttpResponse::Found()
-                    .append_header(("Location", "/admin"))
-                    .finish()
-            }
-            Err(e) => {
-                println!("[DEBUG] Failed to set session: {}", e);
-                FlashMessage::error("Login failed due to session error.").send();
-                HttpResponse::Found()
-                    .append_header(("Location", "/admin/login"))
-                    .finish()
-            }
-        }
-    } else {
-        println!("[DEBUG] Password verification failed, redirecting back to login");
-        FlashMessage::error("Invalid username or password.").send();
-        HttpResponse::Found()
-            .append_header(("Location", "/admin/login"))
-            .finish()
-    }
-}
-
-pub async fn admin_dashboard(session: Session, db: web::Data<Database>) -> impl Responder {
-    if session.get::<String>("user_id").ok().flatten().is_none() {
-        return HttpResponse::Found()
-            .append_header(("Location", "/admin/login"))
-            .finish();
-    }
+pub async fn admin_dashboard(db: web::Data<Database>) -> Result<HttpResponse> {
 
     let mut context = tera::Context::new();
     context.insert("SITENAME", "maccms-rust");
@@ -1153,7 +1072,7 @@ pub async fn admin_dashboard(session: Session, db: web::Data<Database>) -> impl 
     context.insert("total_users", &total_users);
 
     match TERA.render("admin/index.html", &context) {
-        Ok(s) => HttpResponse::Ok().content_type("text/html").body(s),
+        Ok(s) => Ok(HttpResponse::Ok().content_type("text/html").body(s)),
         Err(e) => {
             let context_variables = format!(
                 "total_videos: {}, total_categories: {}, total_collections: {}, total_configs: {}, total_bindings: {}, total_users: {}",
@@ -1166,24 +1085,19 @@ pub async fn admin_dashboard(session: Session, db: web::Data<Database>) -> impl 
                 Some("Admin dashboard with statistics"),
                 Some(&context_variables)
             );
-            HttpResponse::InternalServerError().body("Template error")
+            Ok(HttpResponse::InternalServerError().body("Template error"))
         }
     }
 }
 
-pub async fn logout(session: Session) -> impl Responder {
-    session.clear();
+pub async fn logout() -> HttpResponse {
+    // JWT 是无状态的，前端会清除 token
     HttpResponse::Found()
         .append_header(("Location", "/admin/login"))
         .finish()
 }
 
-pub async fn admin_types_page(session: Session, db: web::Data<Database>) -> impl Responder {
-    if session.get::<String>("user_id").ok().flatten().is_none() {
-        return HttpResponse::Found()
-            .append_header(("Location", "/admin/login"))
-            .finish();
-    }
+pub async fn admin_types_page(db: web::Data<Database>) -> Result<HttpResponse> {
 
     let type_collection = db.collection::<Type>("types");
     let types: Vec<Type> = match type_collection.find(None, None).await {
@@ -1199,48 +1113,55 @@ pub async fn admin_types_page(session: Session, db: web::Data<Database>) -> impl
     context.insert("types", &types);
 
     match TERA.render("admin/types.html", &context) {
-        Ok(s) => HttpResponse::Ok().content_type("text/html").body(s),
+        Ok(s) => Ok(HttpResponse::Ok().content_type("text/html").body(s)),
         Err(e) => {
             eprintln!("[ERROR] Failed to render 'admin/types.html': {}", e);
             eprintln!("[ERROR] Error kind: {:?}", e.kind);
             eprintln!("[ERROR] Full error chain: {:?}", e);
-            HttpResponse::InternalServerError().body("Template error")
+            Ok(HttpResponse::InternalServerError().body("Template error"))
         }
     }
 }
 
-pub async fn init_data_handler(session: Session, db: web::Data<Database>) -> impl Responder {
-    // Check if user is logged in
-    if session.get::<String>("user_id").ok().flatten().is_none() {
-        return HttpResponse::Found()
-            .append_header(("Location", "/admin/login"))
-            .finish();
+// API handler wrappers with JWT authentication
+pub async fn init_data_handler_wrapper(
+    req: actix_web::HttpRequest,
+    db: web::Data<Database>,
+) -> impl Responder {
+    match AdminUser::from_request(&req, &mut actix_web::dev::Payload::None).await {
+        Ok(_admin) => {
+            init_data_handler(db).await.unwrap_or_else(|e| {
+                HttpResponse::InternalServerError().body(format!("Error: {}", e))
+            })
+        }
+        Err(_) => {
+            HttpResponse::Unauthorized().json(serde_json::json!({
+                "success": false,
+                "message": "需要管理员权限"
+            }))
+        }
     }
+}
 
+pub async fn init_data_handler(db: web::Data<Database>) -> Result<HttpResponse> {
     match init_data::init_all_data(&db).await {
         Ok(_) => {
             FlashMessage::info("数据初始化成功！").send();
-            HttpResponse::Found()
+            Ok(HttpResponse::Found()
                 .append_header(("Location", "/admin"))
-                .finish()
+                .finish())
         }
         Err(e) => {
             eprintln!("Data initialization failed: {}", e);
             FlashMessage::error(&format!("数据初始化失败: {}", e)).send();
-            HttpResponse::Found()
+            Ok(HttpResponse::Found()
                 .append_header(("Location", "/admin"))
-                .finish()
+                .finish())
         }
     }
 }
 
-pub async fn admin_vods_page(session: Session, db: web::Data<Database>) -> impl Responder {
-    if session.get::<String>("user_id").ok().flatten().is_none() {
-        return HttpResponse::Found()
-            .append_header(("Location", "/admin/login"))
-            .finish();
-    }
-
+pub async fn admin_vods_page(db: web::Data<Database>) -> Result<HttpResponse> {
     let vod_collection = db.collection::<Vod>("vods");
     let find_options = FindOptions::builder()
         .sort(doc! {"vod_pubdate": -1})
@@ -1259,7 +1180,7 @@ pub async fn admin_vods_page(session: Session, db: web::Data<Database>) -> impl 
     context.insert("vods", &vods);
 
     match TERA.render("admin/vods.html", &context) {
-        Ok(s) => HttpResponse::Ok().content_type("text/html").body(s),
+        Ok(s) => Ok(HttpResponse::Ok().content_type("text/html").body(s)),
         Err(e) => {
             handle_template_rendering_error(
                 "admin/vods.html",
@@ -1267,17 +1188,12 @@ pub async fn admin_vods_page(session: Session, db: web::Data<Database>) -> impl 
                 Some("Admin VOD management page"),
                 None
             );
-            HttpResponse::InternalServerError().body("Template error")
+            Ok(HttpResponse::InternalServerError().body("Template error"))
         }
     }
 }
 
-pub async fn admin_collect_page(session: Session, db: web::Data<Database>) -> impl Responder {
-    if session.get::<String>("user_id").ok().flatten().is_none() {
-        return HttpResponse::Found()
-            .append_header(("Location", "/admin/login"))
-            .finish();
-    }
+pub async fn admin_collect_page(db: web::Data<Database>) -> Result<HttpResponse> {
     let collection_collection = db.collection::<crate::models::Collection>("collections");
     let collections: Vec<crate::models::Collection> =
         match collection_collection.find(None, None).await {
@@ -1295,7 +1211,7 @@ pub async fn admin_collect_page(session: Session, db: web::Data<Database>) -> im
     // println!("collections: {:?}", collections);
 
     match TERA.render("admin/collect.html", &context) {
-        Ok(s) => HttpResponse::Ok().content_type("text/html").body(s),
+        Ok(s) => Ok(HttpResponse::Ok().content_type("text/html").body(s)),
         Err(e) => {
             let context_variables = format!("collections count: {}", collections.len());
             
@@ -1305,18 +1221,12 @@ pub async fn admin_collect_page(session: Session, db: web::Data<Database>) -> im
                 Some("Admin collection management page"),
                 Some(&context_variables)
             );
-            HttpResponse::InternalServerError().body("Template error")
+            Ok(HttpResponse::InternalServerError().body("Template error"))
         }
     }
 }
 
-pub async fn admin_bindings_page(session: Session, db: web::Data<Database>) -> impl Responder {
-    if session.get::<String>("user_id").ok().flatten().is_none() {
-        return HttpResponse::Found()
-            .append_header(("Location", "/admin/login"))
-            .finish();
-    }
-
+pub async fn admin_bindings_page(db: web::Data<Database>) -> Result<HttpResponse> {
     let binding_collection = db.collection::<crate::models::Binding>("bindings");
     let bindings: Vec<crate::models::Binding> = match binding_collection.find(None, None).await {
         Ok(cursor) => cursor.try_collect().await.unwrap_or_else(|_| vec![]),
@@ -1331,7 +1241,7 @@ pub async fn admin_bindings_page(session: Session, db: web::Data<Database>) -> i
     context.insert("bindings", &bindings);
 
     match TERA.render("admin/bindings.html", &context) {
-        Ok(s) => HttpResponse::Ok().content_type("text/html").body(s),
+        Ok(s) => Ok(HttpResponse::Ok().content_type("text/html").body(s)),
         Err(e) => {
             let context_variables = format!("bindings count: {}", bindings.len());
             
@@ -1341,18 +1251,12 @@ pub async fn admin_bindings_page(session: Session, db: web::Data<Database>) -> i
                 Some("Admin bindings management page"),
                 Some(&context_variables)
             );
-            HttpResponse::InternalServerError().body("Template error")
+            Ok(HttpResponse::InternalServerError().body("Template error"))
         }
     }
 }
 
-pub async fn admin_config_page(session: Session, db: web::Data<Database>) -> impl Responder {
-    if session.get::<String>("user_id").ok().flatten().is_none() {
-        return HttpResponse::Found()
-            .append_header(("Location", "/admin/login"))
-            .finish();
-    }
-
+pub async fn admin_config_page(db: web::Data<Database>) -> Result<HttpResponse> {
     let config_collection = db.collection::<crate::models::Config>("configs");
     let configs: Vec<crate::models::Config> = match config_collection.find(None, None).await {
         Ok(cursor) => cursor.try_collect().await.unwrap_or_else(|_| vec![]),
@@ -1367,7 +1271,7 @@ pub async fn admin_config_page(session: Session, db: web::Data<Database>) -> imp
     context.insert("configs", &configs);
 
     match TERA.render("admin/config.html", &context) {
-        Ok(s) => HttpResponse::Ok().content_type("text/html").body(s),
+        Ok(s) => Ok(HttpResponse::Ok().content_type("text/html").body(s)),
         Err(e) => {
             let context_variables = format!("configs count: {}", configs.len());
             
@@ -1377,19 +1281,12 @@ pub async fn admin_config_page(session: Session, db: web::Data<Database>) -> imp
                 Some("Admin configuration management page"),
                 Some(&context_variables)
             );
-            HttpResponse::InternalServerError().body("Template error")
+            Ok(HttpResponse::InternalServerError().body("Template error"))
         }
     }
 }
 
-pub async fn admin_collect_vod_page(session: Session, db: web::Data<Database>) -> impl Responder {
-    // Check if user is logged in
-    if session.get::<String>("user_id").unwrap_or(None).is_none() {
-        return HttpResponse::Found()
-            .append_header(("Location", "/admin/login"))
-            .finish();
-    }
-
+pub async fn admin_collect_vod_page(db: web::Data<Database>) -> Result<HttpResponse> {
     let mut context = tera::Context::new();
 
     // 获取采集源列表
@@ -1418,7 +1315,7 @@ pub async fn admin_collect_vod_page(session: Session, db: web::Data<Database>) -
     context.insert("types", &types);
 
     match TERA.render("admin/collect_vod.html", &context) {
-        Ok(rendered) => HttpResponse::Ok().content_type("text/html").body(rendered),
+        Ok(rendered) => Ok(HttpResponse::Ok().content_type("text/html").body(rendered)),
         Err(e) => {
             let context_variables = format!(
                 "collections count: {}, bindings count: {}, types count: {}",
@@ -1431,23 +1328,17 @@ pub async fn admin_collect_vod_page(session: Session, db: web::Data<Database>) -
                 Some("Admin VOD collection page"),
                 Some(&context_variables)
             );
-            HttpResponse::InternalServerError().body("Template error")
+            Ok(HttpResponse::InternalServerError().body("Template error"))
         }
     }
 }
 
-pub async fn admin_indexes_page(session: Session) -> impl Responder {
-    if session.get::<String>("user_id").ok().flatten().is_none() {
-        return HttpResponse::Found()
-            .append_header(("Location", "/admin/login"))
-            .finish();
-    }
-
+pub async fn admin_indexes_page() -> Result<HttpResponse> {
     let mut context = tera::Context::new();
     context.insert("SITENAME", "maccms-rust");
 
     match TERA.render("admin/indexes.html", &context) {
-        Ok(s) => HttpResponse::Ok().content_type("text/html").body(s),
+        Ok(s) => Ok(HttpResponse::Ok().content_type("text/html").body(s)),
         Err(e) => {
             handle_template_rendering_error(
                 "admin/indexes.html",
@@ -1455,36 +1346,47 @@ pub async fn admin_indexes_page(session: Session) -> impl Responder {
                 Some("Admin indexes management page"),
                 None
             );
-            HttpResponse::InternalServerError().body("Template error")
+            Ok(HttpResponse::InternalServerError().body("Template error"))
+        }
+    }
+}
+
+// 刷新缓存处理器包装器
+pub async fn refresh_cache_handler_wrapper(
+    req: actix_web::HttpRequest,
+    site_data_manager: web::Data<SiteDataManager>,
+) -> impl Responder {
+    match AdminUser::from_request(&req, &mut actix_web::dev::Payload::None).await {
+        Ok(_admin) => {
+            refresh_cache_handler(site_data_manager).await.unwrap_or_else(|e| {
+                HttpResponse::InternalServerError().body(format!("Error: {}", e))
+            })
+        }
+        Err(_) => {
+            HttpResponse::Unauthorized().json(serde_json::json!({
+                "success": false,
+                "message": "需要管理员权限"
+            }))
         }
     }
 }
 
 // 刷新缓存处理器
 pub async fn refresh_cache_handler(
-    session: Session,
     site_data_manager: web::Data<SiteDataManager>,
-) -> impl Responder {
-    // 检查用户是否登录
-    if session.get::<String>("user_id").ok().flatten().is_none() {
-        return HttpResponse::Unauthorized().json(serde_json::json!({
-            "success": false,
-            "message": "未登录或会话已过期"
-        }));
-    }
-
+) -> Result<HttpResponse> {
     match site_data_manager.refresh().await {
-        Ok(_) => HttpResponse::Ok().json(serde_json::json!({
+        Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
             "success": true,
             "message": "缓存刷新成功",
             "timestamp": chrono::Utc::now().timestamp()
-        })),
+        }))),
         Err(e) => {
             eprintln!("Cache refresh failed: {}", e);
-            HttpResponse::InternalServerError().json(serde_json::json!({
+            Ok(HttpResponse::InternalServerError().json(serde_json::json!({
                 "success": false,
                 "message": format!("缓存刷新失败: {}", e)
-            }))
+            })))
         }
     }
 }
@@ -1534,17 +1436,8 @@ pub struct UseCardResponse {
 }
 
 // Get user VIP info
-pub async fn get_user_vip_info(http_req: actix_web::HttpRequest) -> impl Responder {
-    // Check if user is authenticated
-    let user = match http_req.extensions().get::<User>() {
-        Some(user) => user.clone(),
-        None => {
-            return HttpResponse::Unauthorized().json(serde_json::json!({
-                "success": false,
-                "message": "请先登录"
-            }));
-        }
-    };
+pub async fn get_user_vip_info(user: crate::jwt_auth::AuthenticatedUser) -> impl Responder {
+    let user = user.user;
 
     let current_time = chrono::Utc::now();
     let is_vip = if let Some(vip_end) = user.vip_end_time {
@@ -1596,18 +1489,9 @@ pub async fn get_buy_card_config(db: web::Data<Database>) -> impl Responder {
 pub async fn use_card(
     db: web::Data<Database>,
     req: web::Json<UseCardRequest>,
-    http_req: actix_web::HttpRequest,
+    user: crate::jwt_auth::AuthenticatedUser,
 ) -> impl Responder {
-    // Check if user is authenticated
-    let user = match http_req.extensions().get::<User>() {
-        Some(user) => user.clone(),
-        None => {
-            return HttpResponse::Unauthorized().json(serde_json::json!({
-                "success": false,
-                "message": "请先登录"
-            }));
-        }
-    };
+    let user = user.user;
 
     let card_code = &req.card_code;
     
@@ -1725,9 +1609,9 @@ pub async fn use_card(
 
 // VIP access validation API endpoint
 pub async fn vip_check_handler(
-    req: actix_web::HttpRequest,
     db: web::Data<Database>,
     request: web::Json<crate::dto::VipCheckRequest>,
+    user: crate::jwt_auth::OptionalAuthenticatedUser,
 ) -> impl Responder {
     // Parse video ID from request
     let video_id = match mongodb::bson::oid::ObjectId::parse_str(&request.video_id) {
@@ -1792,8 +1676,8 @@ pub async fn vip_check_handler(
     }
 
     // For VIP content, check user login status
-    let user = match req.extensions().get::<User>() {
-        Some(user) => user.clone(),
+    let user = match user.0 {
+        Some(auth_user) => auth_user.user,
         None => {
             return HttpResponse::Ok().json(crate::dto::VipCheckResponse {
                 success: true,

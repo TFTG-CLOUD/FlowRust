@@ -134,6 +134,16 @@
                         用户管理
                     </a>
 
+                    <!-- Storage Management -->
+                    <a href="/admin/storage" id="nav-storage"
+                        class="flex items-center px-4 py-3 text-sm font-medium rounded-lg hover:bg-sidebar-light transition-colors duration-200">
+                        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                        </svg>
+                        分布式储存
+                    </a>
+
                     <!-- Database Indexes -->
                     <a href="/admin/indexes"
                         class="flex items-center px-4 py-3 text-sm font-medium rounded-lg hover:bg-sidebar-light transition-colors duration-200">
@@ -154,7 +164,7 @@
                         </svg>
                         管理员
                     </div>
-                    <a href="/admin/logout"
+                    <a href="#" onclick="handleLogout(event)"
                         class="flex items-center px-4 py-3 mt-2 text-sm font-medium rounded-lg hover:bg-red-600 transition-colors duration-200">
                         <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -196,11 +206,11 @@
                             </svg>
                             刷新缓存
                         </button>
-                        <div class="flex items-center space-x-2">
+                        <div class="flex items-center space-x-2" id="userInfo">
                             <div class="w-8 h-8 bg-brand rounded-full flex items-center justify-center">
-                                <span class="text-sm font-medium text-white">A</span>
+                                <span class="text-sm font-medium text-white" id="userAvatar">A</span>
                             </div>
-                            <span class="text-sm font-medium text-gray-700">管理员</span>
+                            <span class="text-sm font-medium text-gray-700" id="userName">管理员</span>
                         </div>
                     </div>
                 </div>
@@ -221,6 +231,105 @@
 
     <!-- JavaScript -->
     <script>
+        // JWT 认证检查
+        function checkAuth() {
+            const token = localStorage.getItem('admin_token');
+            const user = localStorage.getItem('admin_user');
+            if (window.location.pathname == '/admin/login') {
+                return false;
+            }
+            if (!token || !user) {
+                // 未登录，跳转到登录页
+                window.location.href = '/admin/login';
+                return false;
+            }
+
+            // 更新用户信息显示
+            try {
+                const userData = JSON.parse(user);
+                document.getElementById('userName').textContent = userData.user_name || userData.user_nick_name || '管理员';
+                document.getElementById('userAvatar').textContent = (userData.user_name || 'A').charAt(0).toUpperCase();
+            } catch (e) {
+                console.error('Error parsing user data:', e);
+            }
+
+            return true;
+        }
+
+        // JWT 登出处理
+        async function handleLogout(event) {
+            event.preventDefault();
+
+            if (!confirm('确定要退出登录吗？')) {
+                return;
+            }
+
+            const token = localStorage.getItem('admin_token');
+
+            try {
+                // 调用后端登出 API
+                await fetch('/api/admin/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+            } catch (error) {
+                console.error('Logout error:', error);
+            } finally {
+                // 清除本地存储的 token 和用户信息
+                localStorage.removeItem('admin_token');
+                localStorage.removeItem('admin_user');
+
+                // 跳转到登录页
+                window.location.href = '/admin/login';
+            }
+        }
+
+        // API 请求封装（自动添加 JWT token）
+        async function apiFetch(url, options = {}) {
+            const token = localStorage.getItem('admin_token');
+
+            if (!token) {
+                window.location.href = '/admin/login';
+                throw new Error('未登录');
+            }
+
+            const defaultOptions = {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            };
+
+            const mergedOptions = {
+                ...defaultOptions,
+                ...options,
+                headers: {
+                    ...defaultOptions.headers,
+                    ...(options.headers || {})
+                }
+            };
+
+            const response = await fetch(url, mergedOptions);
+
+            // 如果返回 401，说明 token 过期或无效
+            if (response.status === 401) {
+                localStorage.removeItem('admin_token');
+                localStorage.removeItem('admin_user');
+                window.location.href = '/admin/login';
+                throw new Error('认证已过期，请重新登录');
+            }
+
+            return response;
+        }
+
+        // 检查认证状态
+        if (!checkAuth()) {
+            // 如果未登录，会自动跳转到登录页
+        }
+
         // Sidebar toggle functionality
         const sidebar = document.getElementById('sidebar');
         const sidebarToggle = document.getElementById('sidebarToggle');
@@ -283,12 +392,8 @@
                     this.innerHTML = '<svg class="w-4 h-4 mr-1 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>刷新中...';
 
                     try {
-                        const response = await fetch('/admin/refresh-cache', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            credentials: 'same-origin'
+                        const response = await apiFetch('/admin/refresh-cache', {
+                            method: 'POST'
                         });
 
                         const result = await response.json();
@@ -300,7 +405,7 @@
                         }
                     } catch (error) {
                         console.error('刷新缓存失败:', error);
-                        window.showNotification('网络错误，请稍后重试', 'error', 5000);
+                        window.showNotification(error.message || '网络错误，请稍后重试', 'error', 5000);
                     } finally {
                         // 恢复按钮状态
                         this.disabled = false;

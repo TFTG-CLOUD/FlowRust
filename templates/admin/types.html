@@ -599,14 +599,14 @@
             let response;
             if (currentTypeId) {
                 // 更新
-                response = await fetch(`/api/admin/types/${currentTypeId}`, {
+                response = await apiFetch(`/api/admin/types/${currentTypeId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
             } else {
                 // 创建
-                response = await fetch('/api/admin/types', {
+                response = await apiFetch('/api/admin/types', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
@@ -645,7 +645,7 @@
         if (!currentDeleteId) return;
 
         try {
-            const response = await fetch(`/api/admin/types/${currentDeleteId}`, {
+            const response = await apiFetch(`/api/admin/types/${currentDeleteId}`, {
                 method: 'DELETE'
             });
 

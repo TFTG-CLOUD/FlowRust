@@ -1640,7 +1640,7 @@
 
           const result = await response.json();
 
-          if (response.ok) {
+          if (result.success) {
             this.token = result.token;
             localStorage.setItem('auth_token', this.token);
             this.currentUser = result.user;
@@ -1648,7 +1648,7 @@
             this.closeModal('loginModal');
             this.showSuccessMessage('登录成功！');
           } else {
-            this.showErrorMessage(result.message || '登录失败');
+            this.showErrorMessage(result.msg || '登录失败');
           }
         } catch (error) {
           console.error('登录失败:', error);

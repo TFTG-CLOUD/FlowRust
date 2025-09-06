@@ -5,72 +5,73 @@ use bcrypt::{hash, verify, DEFAULT_COST};
 use mongodb::{bson::doc, Database};
 use uuid::Uuid;
 
-pub async fn login(login_req: web::Json<LoginRequest>, db: web::Data<Database>) -> impl Responder {
-    let user_collection = db.collection::<User>("users");
-
-    // 查找用户
-    match user_collection
-        .find_one(doc! { "user_name": &login_req.username }, None)
-        .await
-    {
-        Ok(Some(user)) => {
-            // 验证密码
-            match verify(&login_req.password, &user.user_pwd) {
-                Ok(true) => {
-                    // 检查用户状态
-                    if user.user_status != 1 {
-                        return HttpResponse::Forbidden().json(AuthResponse {
-                            code: 0,
-                            msg: "用户账户已被禁用".to_string(),
-                            token: None,
-                            user: None,
-                        });
-                    }
-
-                    // 生成JWT令牌（简化版本，实际项目中应该使用真实的JWT库）
-                    let token = generate_token(&user.id.unwrap().to_string());
-
-                    HttpResponse::Ok().json(AuthResponse {
-                        code: 1,
-                        msg: "登录成功".to_string(),
-                        token: Some(token),
-                        user: Some(user),
-                    })
-                }
-                Ok(false) => HttpResponse::Unauthorized().json(AuthResponse {
-                    code: 0,
-                    msg: "用户名或密码错误".to_string(),
-                    token: None,
-                    user: None,
-                }),
-                Err(e) => {
-                    eprintln!("密码验证失败: {}", e);
-                    HttpResponse::InternalServerError().json(AuthResponse {
-                        code: 0,
-                        msg: "服务器错误".to_string(),
-                        token: None,
-                        user: None,
-                    })
-                }
-            }
-        }
-        Ok(None) => HttpResponse::Unauthorized().json(AuthResponse {
-            code: 0,
-            msg: "用户名或密码错误".to_string(),
-            token: None,
-            user: None,
-        }),
-        Err(e) => {
-            eprintln!("数据库查询失败: {}", e);
-            HttpResponse::InternalServerError().json(AuthResponse {
-                code: 0,
-                msg: "服务器错误".to_string(),
-                token: None,
-                user: None,
-            })
-        }
-    }
-}
+// 旧的login函数已被统一的unified_login替代
+// pub async fn login(login_req: web::Json<LoginRequest>, db: web::Data<Database>) -> impl Responder {
+//     let user_collection = db.collection::<User>("users");
+// 
+//     // 查找用户
+//     match user_collection
+//         .find_one(doc! { "user_name": &login_req.username }, None)
+//         .await
+//     {
+//         Ok(Some(user)) => {
+//             // 验证密码
+//             match verify(&login_req.password, &user.user_pwd) {
+//                 Ok(true) => {
+//                     // 检查用户状态
+//                     if user.user_status != 1 {
+//                         return HttpResponse::Forbidden().json(AuthResponse {
+//                             code: 0,
+//                             msg: "用户账户已被禁用".to_string(),
+//                             token: None,
+//                             user: None,
+//                         });
+//                     }
+// 
+//                     // 生成JWT令牌（简化版本，实际项目中应该使用真实的JWT库）
+//                     let token = generate_token(&user.id.unwrap().to_string());
+// 
+//                     HttpResponse::Ok().json(AuthResponse {
+//                         code: 1,
+//                         msg: "登录成功".to_string(),
+//                         token: Some(token),
+//                         user: Some(user),
+//                     })
+//                 }
+//                 Ok(false) => HttpResponse::Unauthorized().json(AuthResponse {
+//                     code: 0,
+//                     msg: "用户名或密码错误".to_string(),
+//                     token: None,
+//                     user: None,
+//                 }),
+//                 Err(e) => {
+//                     eprintln!("密码验证失败: {}", e);
+//                     HttpResponse::InternalServerError().json(AuthResponse {
+//                         code: 0,
+//                         msg: "服务器错误".to_string(),
+//                         token: None,
+//                         user: None,
+//                     })
+//                 }
+//             }
+//         }
+//         Ok(None) => HttpResponse::Unauthorized().json(AuthResponse {
+//             code: 0,
+//             msg: "用户名或密码错误".to_string(),
+//             token: None,
+//             user: None,
+//         }),
+//         Err(e) => {
+//             eprintln!("数据库查询失败: {}", e);
+//             HttpResponse::InternalServerError().json(AuthResponse {
+//                 code: 0,
+//                 msg: "服务器错误".to_string(),
+//                 token: None,
+//                 user: None,
+//             })
+//         }
+//     }
+// }
 
 pub async fn register(
     register_req: web::Json<RegisterRequest>,
@@ -173,7 +174,7 @@ pub async fn register(
                 // 获取刚创建的用户信息（不包含密码）
                 match user_collection.find_one(doc! { "_id": id }, None).await {
                     Ok(Some(user)) => {
-                        let token = generate_token(&id.to_string());
+                        let token = crate::jwt_auth::get_jwt_service().generate_token(&user).unwrap();
                         HttpResponse::Created().json(AuthResponse {
                             code: 1,
                             msg: "注册成功".to_string(),
@@ -253,9 +254,10 @@ pub async fn get_current_user(
         }
     };
 
-    // 验证token并获取用户信息（简化版本）
-    let user_id = match validate_token(&token) {
-        Ok(id) => id,
+    // 使用JWT服务验证token
+    let jwt_service = crate::jwt_auth::get_jwt_service();
+    let claims = match jwt_service.validate_token(&token) {
+        Ok(claims) => claims,
         Err(e) => {
             return HttpResponse::Unauthorized().json(UserResponse {
                 code: 0,
@@ -269,7 +271,7 @@ pub async fn get_current_user(
     let user_collection = db.collection::<User>("users");
     match user_collection
         .find_one(
-            doc! { "_id": mongodb::bson::oid::ObjectId::parse_str(&user_id).unwrap() },
+            doc! { "_id": mongodb::bson::oid::ObjectId::parse_str(&claims.sub).unwrap() },
             None,
         )
         .await
@@ -303,18 +305,3 @@ pub async fn logout() -> impl Responder {
     }))
 }
 
-// 简化的令牌生成函数（实际项目中应该使用真实的JWT库）
-fn generate_token(user_id: &str) -> String {
-    let uuid = Uuid::new_v4();
-    format!("{}_{}", user_id, uuid)
-}
-
-// 简化的令牌验证函数（实际项目中应该使用真实的JWT库）
-pub fn validate_token(token: &str) -> Result<String, String> {
-    let parts: Vec<&str> = token.split('_').collect();
-    if parts.len() >= 2 {
-        Ok(parts[0].to_string())
-    } else {
-        Err("无效的令牌格式".to_string())
-    }
-}

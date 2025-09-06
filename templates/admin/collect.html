@@ -688,7 +688,7 @@
             testUrl = 'https://' + testUrl;
         }
 
-        fetch('/api/collect/categories?url=' + encodeURIComponent(testUrl), {
+        apiFetch('/api/collect/categories?url=' + encodeURIComponent(testUrl), {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -722,7 +722,7 @@
         // 先检查绑定状态
         showToast('正在检查分类绑定状态...', 'info');
 
-        fetch('/api/admin/collections/' + id + '/binding-status', {
+        apiFetch('/api/admin/collections/' + id + '/binding-status', {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -750,7 +750,7 @@
 
                 showToast('正在启动采集任务...', 'info');
 
-                fetch('/api/admin/collections/' + id + '/collect', {
+                apiFetch('/api/admin/collections/' + id + '/collect', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -829,7 +829,7 @@
     // 轮询采集进度
     function pollCollectProgress(taskId, totalPages) {
         var interval = setInterval(function () {
-            fetch('/api/admin/collect/progress/' + taskId)
+            apiFetch('/api/admin/collect/progress/' + taskId)
                 .then(function (response) {
                     if (response.ok) {
                         return response.json();
@@ -884,7 +884,7 @@
 
         var method = isEditing ? 'PUT' : 'POST';
 
-        fetch(url, {
+        apiFetch(url, {
             method: method,
             headers: {
                 'Content-Type': 'application/json',
@@ -917,7 +917,7 @@
     function confirmDelete() {
         if (!currentDeleteId) return;
 
-        fetch('/api/admin/collections/' + currentDeleteId, {
+        apiFetch('/api/admin/collections/' + currentDeleteId, {
             method: 'DELETE'
         })
             .then(function (response) {
@@ -1020,7 +1020,7 @@
     }
 
     function fetchRunningTasksFromAPI() {
-        fetch('/api/admin/running-tasks', {
+        apiFetch('/api/admin/running-tasks', {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -1148,7 +1148,7 @@
         logContent.innerHTML = '<div class="text-gray-500">加载日志中...</div>';
 
         // 获取任务详情以显示日志
-        fetch('/api/admin/collect/progress/' + taskId, {
+        apiFetch('/api/admin/collect/progress/' + taskId, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -1196,7 +1196,7 @@
         showToast('正在停止任务...', 'info');
 
         // 调用后端停止任务API
-        fetch('/api/collect/stop/' + taskId, {
+        apiFetch('/api/collect/stop/' + taskId, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1255,7 +1255,7 @@
 
     // 获取定时任务状态
     function getScheduledTaskStatus() {
-        fetch('/api/admin/scheduled-task/status', {
+        apiFetch('/api/admin/scheduled-task/status', {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -1405,7 +1405,7 @@
     // 启动定时任务
     function startScheduledTask() {
         // 先检查当前状态
-        fetch('/api/admin/scheduled-task/status', {
+        apiFetch('/api/admin/scheduled-task/status', {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -1432,7 +1432,7 @@
 
                     showToast('正在启动定时采集任务...', 'info');
 
-                    return fetch('/api/admin/scheduled-task/start', {
+                    return apiFetch('/api/admin/scheduled-task/start', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -1471,7 +1471,7 @@
 
         showToast('正在停止定时采集任务...', 'info');
 
-        fetch('/api/admin/scheduled-task/stop', {
+        apiFetch('/api/admin/scheduled-task/stop', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1511,7 +1511,7 @@
 
         showToast('正在更新定时任务配置...', 'info');
 
-        fetch('/api/admin/scheduled-task/config', {
+        apiFetch('/api/admin/scheduled-task/config', {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',

@@ -396,3 +396,32 @@ pub struct UserPageParams {
     pub page: Option<i32>,
     pub limit: Option<i32>,
 }
+
+// Generic API Response
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApiResponse<T> {
+    pub code: i32,
+    pub msg: String,
+    pub data: Option<T>,
+    pub success: Option<bool>,
+}
+
+impl<T> ApiResponse<T> {
+    pub fn success(data: T) -> Self {
+        Self {
+            code: 200,
+            msg: "Success".to_string(),
+            data: Some(data),
+            success: Some(true),
+        }
+    }
+
+    pub fn error(msg: String) -> Self {
+        Self {
+            code: 500,
+            msg,
+            data: None,
+            success: Some(false),
+        }
+    }
+}
