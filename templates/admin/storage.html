@@ -42,6 +42,7 @@
     // 显示分布式储存服务器列表
     function displayStorageServers(servers) {
         const tbody = document.getElementById('serversList');
+        console.log(servers);
 
         if (servers.length === 0) {
             tbody.innerHTML = `
@@ -85,40 +86,33 @@
                             </svg>
                         </button>
                         <div class="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
-                            <button onclick="testConnection('${server._id}')" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                            <button onclick="testConnection('${server._id["$oid"]}')" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                 <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
                                 </svg>
                                 测试连接
                             </button>
                             <div class="border-t border-gray-100"></div>
-                            <div class="px-4 py-2 text-xs text-gray-500">生成上传URL</div>
-                            <button onclick="generateUploadUrl('${server._id}', 'single')" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                            <button onclick="generateUploadUrl('${server._id["$oid"]}', 'single')" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                 <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                                 </svg>
                                 单文件上传
                             </button>
-                            <button onclick="generateUploadUrl('${server._id}', 'chunk')" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                            <button onclick="generateUploadUrl('${server._id["$oid"]}', 'chunk')" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                 <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                                 </svg>
                                 分片上传
                             </button>
-                            <button onclick="generateUploadUrl('${server._id}', 'archive')" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                                <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                </svg>
-                                压缩包上传
-                            </button>
-                            <div class="border-t border-gray-100"></div>
-                            <button onclick="editServer('${server._id}')" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                              <div class="border-t border-gray-100"></div>
+                            <button onclick="editServer('${server._id["$oid"]}')" class="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                 <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
                                 </svg>
                                 编辑
                             </button>
-                            <button onclick="deleteServer('${server._id}', '${server.name}')" class="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50">
+                            <button onclick="deleteServer('${server._id["$oid"]}', '${server.name}')" class="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50">
                                 <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                                 </svg>
@@ -280,9 +274,9 @@
     // 显示编辑模态框并加载数据
     function showEditModalWithData(serverData) {
         document.getElementById('editModal').classList.remove('hidden');
-        
+
         // 填充表单数据
-        document.getElementById('editServerId').value = serverData._id;
+        document.getElementById('editServerId').value = serverData._id.$oid;
         document.getElementById('editServerName').value = serverData.name;
         document.getElementById('editServerHost').value = serverData.host;
         document.getElementById('editApiKey').value = serverData.api_key;
@@ -394,54 +388,74 @@
 
     // 生成上传预签名URL
     async function generateUploadUrl(serverId, uploadType) {
-        const filename = prompt('请输入文件名：');
-        if (!filename) return;
-
-        const contentType = prompt('请输入文件类型（如：image/jpeg）：');
-        if (!contentType) return;
-
-        const fileSize = prompt('请输入文件大小（字节）：');
-        if (!fileSize) return;
-
+        // 首先获取服务器信息
         try {
-            let url;
+            const serverResponse = await apiFetch(`/api/admin/storage/servers/${serverId}`);
+            const serverResult = await serverResponse.json();
+
+            if (serverResult.code !== 200) {
+                window.showNotification('获取服务器信息失败', 'error');
+                return;
+            }
+
+            const serverData = serverResult.data;
+
+            const filename = prompt('请输入文件名：');
+            if (!filename) return;
+
+            const contentType = prompt('请输入文件类型（如：image/jpeg）：');
+            if (!contentType) return;
+
+            const fileSize = prompt('请输入文件大小（字节）：');
+            if (!fileSize) return;
+
+            // 调用我们后端的API生成上传URL
+            let apiUrl;
+            let requestBody;
+            
             switch (uploadType) {
                 case 'single':
-                    url = `/api/user/storage/upload/single/${serverId}`;
+                    apiUrl = `/api/admin/storage/upload/single/${serverId}`;
+                    requestBody = {
+                        filename: filename,
+                        content_type: contentType,
+                        expires_in: 3600 // 1小时过期
+                    };
                     break;
                 case 'chunk':
-                    url = `/api/user/storage/upload/chunk/${serverId}`;
-                    break;
-                case 'archive':
-                    url = `/api/user/storage/upload/archive/${serverId}`;
+                    apiUrl = `/api/admin/storage/upload/chunk/${serverId}`;
+                    requestBody = {
+                        filename: filename,
+                        file_size: parseInt(fileSize),
+                        content_type: contentType
+                    };
                     break;
             }
 
-            const response = await apiFetch(url, {
+            const response = await apiFetch(apiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    filename: filename,
-                    content_type: contentType,
-                    file_size: parseInt(fileSize),
-                    upload_type: uploadType
-                })
+                body: JSON.stringify(requestBody)
             });
 
             const result = await response.json();
 
-            if (result.code === 200) {
+            if (response.ok) {
                 if (uploadType === 'chunk') {
-                    const message = `分片上传信息：\n上传ID: ${result.data.upload_id}\n分片大小: ${formatBytes(result.data.chunk_size)}\n总分片数: ${result.data.total_chunks}\n过期时间: ${new Date(result.data.expiration * 1000).toLocaleString()}\n\n完成URL: ${result.data.complete_url}\n\n前5个分片URL：`;
-                    const sampleUrls = result.data.chunk_urls.slice(0, 5).join('\n');
-                    alert(message + sampleUrls + (result.data.chunk_urls.length > 5 ? '\n...' : ''));
+                    const chunkData = result.data;
+                    const chunkUploadUrl = `${serverData.host}${chunkData.upload_url}`;
+                    const completeUrl = `${serverData.host}/api/upload/complete/${chunkData.upload_id}`;
+                    const message = `分片上传初始化成功！\n\n上传ID: ${chunkData.upload_id}\n分片大小: ${formatBytes(chunkData.chunk_size)}\n总分片数: ${chunkData.total_chunks}\n\n分片上传URL:\n${chunkUploadUrl}\n\n完成上传URL:\n${completeUrl}\n\n请使用分片上传URL上传所有分片（每次上传需要包含chunkIndex参数），然后调用完成URL合并文件。`;
+                    alert(message);
                 } else {
-                    alert(`上传URL：\n${result.data.upload_url}\n\n文件ID: ${result.data.file_id}\n最大文件大小: ${formatBytes(result.data.max_file_size)}\n过期时间: ${new Date(result.data.expiration * 1000).toLocaleString()}`);
+                    const singleData = result.data;
+                    const message = `上传URL：\n${singleData.signed_url || singleData.upload_url}\n\n文件ID: ${singleData.file_id || 'N/A'}\n过期时间: ${new Date(singleData.expiration * 1000).toLocaleString()}`;
+                    alert(message);
                 }
             } else {
-                window.showNotification(result.msg || '生成上传URL失败', 'error');
+                window.showNotification(`生成上传URL失败: ${result.message || result.error || '未知错误'}`, 'error');
             }
         } catch (error) {
             console.error('生成上传URL失败:', error);
@@ -459,14 +473,64 @@
     }
 
     // 格式化日期
-    function formatDate(dateString) {
-        // Extract just the date and time part: "2025-09-03 5:06:01"
-        const match = dateString.match(/(\d{4}-\d{2}-\d{2}) (\d{1,2}:\d{2}:\d{2})/);
-        if (match) {
-            return `${match[1]} ${match[2]}`;
+    function formatDate(dateValue) {
+        if (!dateValue) return '-';
+
+        // 处理MongoDB日期格式: {"$date": {"$numberLong": "1757217496737"}}
+        if (dateValue && dateValue.$date && dateValue.$date.$numberLong) {
+            const timestamp = parseInt(dateValue.$date.$numberLong);
+            const date = new Date(timestamp);
+            return date.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
         }
-        // If parsing fails, return original string
-        return dateString;
+
+        // 如果是数字，假设是时间戳
+        if (typeof dateValue === 'number') {
+            const date = new Date(dateValue);
+            return date.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        // 如果是字符串，尝试解析
+        if (typeof dateValue === 'string') {
+            try {
+                // 尝试解析ISO格式或MongoDB格式
+                const date = new Date(dateValue);
+                if (!isNaN(date.getTime())) {
+                    return date.toLocaleString('zh-CN', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit'
+                    });
+                }
+
+                // 如果是MongoDB的DateTime字符串格式
+                const match = dateValue.match(/(\d{4}-\d{2}-\d{2}) (\d{1,2}:\d{2}:\d{2})/);
+                if (match) {
+                    return `${match[1]} ${match[2]}`;
+                }
+            } catch (e) {
+                console.warn('Date parsing error:', e);
+            }
+        }
+
+        // 如果都无法解析，返回原始值
+        return String(dateValue);
     }
 </script>
 {% endblock %}
@@ -510,7 +574,8 @@
                             class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">服务器信息
                         </th>
                         <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CMS ID
+                            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CMS
+                            ID
                         </th>
                         <th scope="col"
                             class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态
@@ -544,8 +609,9 @@
         <h3 class="text-lg font-medium text-blue-900 mb-4">使用说明</h3>
         <div class="space-y-2 text-sm text-blue-800">
             <p>• 添加服务器后，可以通过测试连接功能验证服务器是否可用</p>
-            <p>• 支持三种上传方式：单文件上传、分片上传、压缩包上传</p>
-            <p>• 生成的预签名URL可以直接传递给前端用于文件上传</p>
+            <p>• 支持两种上传方式：单文件上传、分片上传</p>
+            <p>• 单文件上传：生成预签名URL，直接上传完整文件</p>
+            <p>• 分片上传：初始化后逐个上传分片，最后调用完成API合并文件</p>
             <p>• API密钥和密钥用于与分布式储存处理程序进行身份验证</p>
         </div>
     </div>

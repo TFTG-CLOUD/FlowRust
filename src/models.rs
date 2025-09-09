@@ -347,13 +347,17 @@ pub struct PresignedUploadResponse {
     pub max_file_size: i64,         // Maximum file size in bytes
 }
 
-// Chunk upload info model
+// Chunk upload info model - matches processing server API documentation
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChunkUploadInfo {
-    pub upload_id: String,          // Upload ID for chunk upload
-    pub chunk_size: i64,            // Chunk size in bytes
-    pub total_chunks: i32,          // Total number of chunks
-    pub chunk_urls: Vec<String>,    // URLs for each chunk
-    pub complete_url: String,        // URL to complete the upload
-    pub expiration: i64,            // Expiration timestamp
+    #[serde(rename = "uploadId")]
+    pub upload_id: String,           // Upload ID for chunk upload
+    #[serde(rename = "chunkSize")]  
+    pub chunk_size: i64,             // Chunk size in bytes
+    #[serde(rename = "totalChunks")]
+    pub total_chunks: i32,           // Total number of chunks
+    #[serde(rename = "uploadUrl")]
+    pub upload_url: String,          // URL for chunk uploads
+    #[serde(rename = "expiresAt")]
+    pub expires_at: String,          // Expiration timestamp
 }

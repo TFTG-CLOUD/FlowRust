@@ -12,10 +12,10 @@ mod jwt_auth;
 mod models;
 mod scheduled_task;
 mod site_data;
-mod unified_auth_handlers;
 mod storage_handlers;
 mod storage_service;
 mod template;
+mod unified_auth_handlers;
 mod web_handlers;
 
 use admin_auth_handlers::{admin_logout, get_current_admin_info, refresh_token};
@@ -37,9 +37,9 @@ use auth_handlers::{get_current_user, logout, register};
 use collect_handlers::{get_collect_categories, get_collect_videos, start_collect_task};
 use site_data::SiteDataManager;
 use storage_handlers::{
-    admin_storage_page, create_storage_server, delete_storage_server, generate_archive_upload_url,
-    generate_chunk_upload_url, generate_single_upload_url, get_storage_servers,
-    test_server_connection, update_storage_server,
+    admin_storage_page, complete_chunk_upload, create_storage_server, delete_storage_server, generate_archive_upload_url,
+    generate_chunk_upload_url, generate_single_upload_url, test_server_connection,
+    update_storage_server,
 };
 use unified_auth_handlers::unified_login;
 use web_handlers::{get_buy_card_config, get_user_vip_info, use_card, vip_check_handler};
@@ -59,6 +59,7 @@ use std::env;
 use std::future::{ready, Ready};
 use std::rc::Rc;
 
+use crate::storage_handlers::{get_storage_server, get_storage_servers};
 
 // Static file cache middleware
 pub struct StaticCacheMiddleware;
@@ -498,6 +499,7 @@ async fn main() -> std::io::Result<()> {
                     )
                     .service(
                         web::resource("/storage/servers/{id}")
+                            .route(web::get().to(get_storage_server))
                             .route(web::put().to(update_storage_server))
                             .route(web::delete().to(delete_storage_server)),
                     )
@@ -540,6 +542,10 @@ async fn main() -> std::io::Result<()> {
                     .service(
                         web::resource("/storage/upload/archive/{server_id}")
                             .route(web::post().to(generate_archive_upload_url)),
+                    )
+                    .service(
+                        web::resource("/storage/upload/chunk/{server_id}/complete/{upload_id}")
+                            .route(web::post().to(complete_chunk_upload)),
                     ),
             )
             // Config API routes

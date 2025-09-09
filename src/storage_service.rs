@@ -1,14 +1,14 @@
-use crate::models::{StorageServer, PresignedUploadResponse, ChunkUploadInfo};
 use crate::dto::ApiResponse;
+use crate::models::{ChunkUploadInfo, PresignedUploadResponse, StorageServer};
+use base64::{engine::general_purpose, Engine as _};
+use chrono::{Duration, Utc};
+use futures::TryStreamExt;
+use hmac::{Hmac, Mac};
 use mongodb::bson::{doc, DateTime};
 use mongodb::Collection;
-use futures::TryStreamExt;
-use serde::{Deserialize, Serialize};
-use chrono::{Utc, Duration};
 use reqwest::Client;
-use hmac::{Hmac, Mac};
+use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use base64::{Engine as _, engine::general_purpose};
 use uuid::Uuid;
 
 type HmacSha256 = Hmac<Sha256>;
@@ -54,7 +54,10 @@ impl StorageService {
     }
 
     // 创建分布式储存服务器
-    pub async fn create_server(&self, request: CreateStorageServerRequest) -> Result<ApiResponse<StorageServer>, String> {
+    pub async fn create_server(
+        &self,
+        request: CreateStorageServerRequest,
+    ) -> Result<ApiResponse<StorageServer>, String> {
         let now = DateTime::now();
         let server = StorageServer {
             id: None,
@@ -68,7 +71,10 @@ impl StorageService {
             updated_at: now,
         };
 
-        let result = self.collection.insert_one(&server, None).await
+        let result = self
+            .collection
+            .insert_one(&server, None)
+            .await
             .map_err(|e| format!("Failed to create storage server: {}", e))?;
 
         let mut created_server = server;
@@ -79,10 +85,15 @@ impl StorageService {
 
     // 获取所有分布式储存服务器
     pub async fn get_servers(&self) -> Result<ApiResponse<Vec<StorageServer>>, String> {
-        let cursor = self.collection.find(None, None).await
+        let cursor = self
+            .collection
+            .find(None, None)
+            .await
             .map_err(|e| format!("Failed to query storage servers: {}", e))?;
 
-        let servers: Vec<StorageServer> = cursor.try_collect().await
+        let servers: Vec<StorageServer> = cursor
+            .try_collect()
+            .await
             .map_err(|e| format!("Failed to collect storage servers: {}", e))?;
 
         Ok(ApiResponse::success(servers))
@@ -94,7 +105,10 @@ impl StorageService {
             .map_err(|e| format!("Invalid ID format: {}", e))?;
 
         let filter = doc! { "_id": object_id };
-        let server = self.collection.find_one(filter, None).await
+        let server = self
+            .collection
+            .find_one(filter, None)
+            .await
             .map_err(|e| format!("Failed to find storage server: {}", e))?;
 
         match server {
@@ -104,7 +118,11 @@ impl StorageService {
     }
 
     // 更新分布式储存服务器
-    pub async fn update_server(&self, id: &str, request: UpdateStorageServerRequest) -> Result<ApiResponse<StorageServer>, String> {
+    pub async fn update_server(
+        &self,
+        id: &str,
+        request: UpdateStorageServerRequest,
+    ) -> Result<ApiResponse<StorageServer>, String> {
         let object_id = mongodb::bson::oid::ObjectId::parse_str(id)
             .map_err(|e| format!("Invalid ID format: {}", e))?;
 
@@ -135,14 +153,20 @@ impl StorageService {
         let filter = doc! { "_id": object_id };
         let update = doc! { "$set": update_doc };
 
-        let result = self.collection.update_one(filter.clone(), update, None).await
+        let result = self
+            .collection
+            .update_one(filter.clone(), update, None)
+            .await
             .map_err(|e| format!("Failed to update storage server: {}", e))?;
 
         if result.matched_count == 0 {
             return Err("Storage server not found".to_string());
         }
 
-        let updated_server = self.collection.find_one(filter, None).await
+        let updated_server = self
+            .collection
+            .find_one(filter, None)
+            .await
             .map_err(|e| format!("Failed to fetch updated server: {}", e))?;
 
         match updated_server {
@@ -157,7 +181,10 @@ impl StorageService {
             .map_err(|e| format!("Invalid ID format: {}", e))?;
 
         let filter = doc! { "_id": object_id };
-        let result = self.collection.delete_one(filter, None).await
+        let result = self
+            .collection
+            .delete_one(filter, None)
+            .await
             .map_err(|e| format!("Failed to delete storage server: {}", e))?;
 
         if result.deleted_count == 0 {
@@ -168,7 +195,11 @@ impl StorageService {
     }
 
     // 生成单文件上传预签名URL
-    pub async fn generate_single_upload_url(&self, server_id: &str, request: GeneratePresignedUrlRequest) -> Result<ApiResponse<PresignedUploadResponse>, String> {
+    pub async fn generate_single_upload_url(
+        &self,
+        server_id: &str,
+        request: GeneratePresignedUrlRequest,
+    ) -> Result<ApiResponse<PresignedUploadResponse>, String> {
         let server = self.get_server(server_id).await?;
         let server_data = server.data.ok_or("Server not found")?;
 
@@ -178,7 +209,7 @@ impl StorageService {
 
         let file_id = Uuid::new_v4().to_string();
         let expiration = Utc::now() + Duration::hours(1);
-        
+
         // 生成签名
         let signature = self.generate_signature(
             &server_data.api_secret,
@@ -211,8 +242,12 @@ impl StorageService {
         Ok(ApiResponse::success(response))
     }
 
-    // 生成分片上传预签名URL
-    pub async fn generate_chunk_upload_url(&self, server_id: &str, request: GeneratePresignedUrlRequest) -> Result<ApiResponse<ChunkUploadInfo>, String> {
+    // 生成分片上传预签名URL - calls processing server API
+    pub async fn generate_chunk_upload_url(
+        &self,
+        server_id: &str,
+        request: GeneratePresignedUrlRequest,
+    ) -> Result<ApiResponse<ChunkUploadInfo>, String> {
         let server = self.get_server(server_id).await?;
         let server_data = server.data.ok_or("Server not found")?;
 
@@ -220,69 +255,87 @@ impl StorageService {
             return Err("Storage server is disabled".to_string());
         }
 
-        let upload_id = Uuid::new_v4().to_string();
-        let chunk_size = 5 * 1024 * 1024; // 5MB chunks
-        let total_chunks = (request.file_size + chunk_size - 1) / chunk_size;
-        let expiration = Utc::now() + Duration::hours(1);
+        // Call processing server's chunked upload init API
+        let init_url = format!("{}/api/upload/chunked/init", server_data.host);
+        
+        let request_body = serde_json::json!({
+            "filename": request.filename,
+            "fileSize": request.file_size,
+            "contentType": request.content_type,
+            "chunkSize": 5 * 1024 * 1024 // 5MB chunks as documented
+        });
 
-        let mut chunk_urls = Vec::new();
-        for chunk_index in 0..total_chunks {
-            let signature = self.generate_signature(
-                &server_data.api_secret,
-                &upload_id,
-                &request.filename,
-                chunk_size,
-                expiration.timestamp(),
-            )?;
+        let response = self
+            .http_client
+            .post(&init_url)
+            .header("Content-Type", "application/json")
+            .header("X-API-Key", &server_data.api_key)
+            .header("X-API-Secret", &server_data.api_secret)
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to call processing server: {}", e))?;
 
-            let chunk_url = format!(
-                "{}/api/upload/chunk?upload_id={}&chunk_index={}&chunk_size={}&filename={}&expiration={}&signature={}&api_key={}",
-                server_data.host,
-                upload_id,
-                chunk_index,
-                chunk_size,
-                urlencoding::encode(&request.filename),
-                expiration.timestamp(),
-                signature,
-                server_data.api_key
-            );
-            chunk_urls.push(chunk_url);
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!("Processing server returned error status {}: {}", status, error_text));
         }
 
-        // 生成完成上传的URL
-        let complete_signature = self.generate_signature(
-            &server_data.api_secret,
-            &upload_id,
-            &request.filename,
-            request.file_size,
-            expiration.timestamp(),
-        )?;
+        let chunk_response: ChunkUploadInfo = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse processing server response: {}", e))?;
 
-        let complete_url = format!(
-            "{}/api/upload/complete?upload_id={}&filename={}&file_size={}&expiration={}&signature={}&api_key={}",
-            server_data.host,
-            upload_id,
-            urlencoding::encode(&request.filename),
-            request.file_size,
-            expiration.timestamp(),
-            complete_signature,
-            server_data.api_key
-        );
+        Ok(ApiResponse::success(chunk_response))
+    }
 
-        let response = ChunkUploadInfo {
-            upload_id,
-            chunk_size,
-            total_chunks: total_chunks as i32,
-            chunk_urls,
-            complete_url,
-            expiration: expiration.timestamp(),
-        };
+    // 完成分片上传 - calls processing server API
+    pub async fn complete_chunk_upload(
+        &self,
+        server_id: &str,
+        upload_id: &str,
+    ) -> Result<ApiResponse<serde_json::Value>, String> {
+        let server = self.get_server(server_id).await?;
+        let server_data = server.data.ok_or("Server not found")?;
 
-        Ok(ApiResponse::success(response))
+        if server_data.status != 1 {
+            return Err("Storage server is disabled".to_string());
+        }
+
+        // Call processing server's chunked upload completion API
+        let complete_url = format!("{}/api/upload/chunked/complete/{}", server_data.host, upload_id);
+
+        let response = self
+            .http_client
+            .post(&complete_url)
+            .header("Content-Type", "application/json")
+            .header("X-API-Key", &server_data.api_key)
+            .header("X-API-Secret", &server_data.api_secret)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to call processing server: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!("Processing server returned error status {}: {}", status, error_text));
+        }
+
+        let completion_response: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse processing server response: {}", e))?;
+
+        Ok(ApiResponse::success(completion_response))
     }
 
     // 生成压缩包上传预签名URL
-    pub async fn generate_archive_upload_url(&self, server_id: &str, request: GeneratePresignedUrlRequest) -> Result<ApiResponse<PresignedUploadResponse>, String> {
+    pub async fn generate_archive_upload_url(
+        &self,
+        server_id: &str,
+        request: GeneratePresignedUrlRequest,
+    ) -> Result<ApiResponse<PresignedUploadResponse>, String> {
         let server = self.get_server(server_id).await?;
         let server_data = server.data.ok_or("Server not found")?;
 
@@ -326,30 +379,44 @@ impl StorageService {
     }
 
     // 生成签名
-    fn generate_signature(&self, api_secret: &str, file_id: &str, filename: &str, file_size: i64, expiration: i64) -> Result<String, String> {
+    fn generate_signature(
+        &self,
+        api_secret: &str,
+        file_id: &str,
+        filename: &str,
+        file_size: i64,
+        expiration: i64,
+    ) -> Result<String, String> {
         let message = format!("{}:{}:{}:{}", file_id, filename, file_size, expiration);
-        
+
         let mut mac = HmacSha256::new_from_slice(api_secret.as_bytes())
             .map_err(|e| format!("Failed to create HMAC: {}", e))?;
-        
+
         mac.update(message.as_bytes());
-        
+
         let result = mac.finalize();
         let signature = general_purpose::STANDARD.encode(result.into_bytes());
-        
+
         Ok(signature)
     }
 
     // 测试服务器连接
-    pub async fn test_server_connection(&self, server_id: &str) -> Result<ApiResponse<bool>, String> {
+    pub async fn test_server_connection(
+        &self,
+        server_id: &str,
+    ) -> Result<ApiResponse<bool>, String> {
         let server = self.get_server(server_id).await?;
         let server_data = server.data.ok_or("Server not found")?;
 
-        let test_url = format!("{}/api/health", server_data.host);
-        
-        let response = self.http_client.get(&test_url)
+        let test_url = format!("{}/api/processing/health", server_data.host);
+
+        let response = self
+            .http_client
+            .get(&test_url)
             .header("X-API-Key", &server_data.api_key)
-            .send().await;
+            .header("X-API-Secret", &server_data.api_secret)
+            .send()
+            .await;
 
         match response {
             Ok(resp) => {
