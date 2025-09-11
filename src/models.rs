@@ -328,12 +328,12 @@ pub struct Audio {
 pub struct StorageServer {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<ObjectId>,
-    pub name: String,               // Server name
-    pub host: String,               // Server host URL
-    pub api_key: String,            // API key
-    pub api_secret: String,         // API secret
-    pub cms_id: String,             // CMS ID
-    pub status: i32,                // Status: 1=enabled, 0=disabled
+    pub name: String,       // Server name
+    pub host: String,       // Server host URL
+    pub api_key: String,    // API key
+    pub api_secret: String, // API secret
+    pub cms_id: String,     // CMS ID
+    pub status: i32,        // Status: 1=enabled, 0=disabled
     pub created_at: DateTime,
     pub updated_at: DateTime,
 }
@@ -341,23 +341,125 @@ pub struct StorageServer {
 // Presigned upload response model
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PresignedUploadResponse {
-    pub upload_url: String,         // Presigned upload URL
-    pub file_id: String,            // File ID
-    pub expiration: i64,            // Expiration timestamp
-    pub max_file_size: i64,         // Maximum file size in bytes
+    pub upload_url: String, // Presigned upload URL
+    pub file_id: String,    // File ID
+    pub expiration: i64,    // Expiration timestamp
+    pub max_file_size: i64, // Maximum file size in bytes
+}
+
+// Upload status response model
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UploadStatusResponse {
+    pub upload_id: String,            // Unique upload ID
+    pub filename: String,             // Original filename
+    pub file_size: i64,               // Total file size in bytes
+    pub chunk_size: i64,              // Chunk size in bytes
+    pub total_chunks: i32,            // Total number of chunks
+    pub received_chunks: i32,         // Number of received chunks
+    pub progress: i32,                // Progress percentage (0-100)
+    pub status: String,               // Status: uploading, completed, cancelled, failed,
+    pub created_at: String,           // Creation timestamp
+    pub completed_at: Option<String>, // Completion timestamp (if completed)
+    pub expires_at: String,           // Expiration timestamp
 }
 
 // Chunk upload info model - matches processing server API documentation
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChunkUploadInfo {
     #[serde(rename = "uploadId")]
-    pub upload_id: String,           // Upload ID for chunk upload
-    #[serde(rename = "chunkSize")]  
-    pub chunk_size: i64,             // Chunk size in bytes
+    pub upload_id: String, // Upload ID for chunk upload
+    #[serde(rename = "chunkSize")]
+    pub chunk_size: i64, // Chunk size in bytes
     #[serde(rename = "totalChunks")]
-    pub total_chunks: i32,           // Total number of chunks
+    pub total_chunks: i32, // Total number of chunks
     #[serde(rename = "uploadUrl")]
-    pub upload_url: String,          // URL for chunk uploads
+    pub upload_url: String, // URL for chunk uploads
     #[serde(rename = "expiresAt")]
-    pub expires_at: String,          // Expiration timestamp
+    pub expires_at: String, // Expiration timestamp
+}
+
+// Processing job model
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProcessingJob {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub job_id: String,                    // Job ID from processing server
+    pub file_id: String,                   // Original file ID
+    pub file_name: String,                 // Original file name
+    pub job_type: String, // Job type: video-transcode, audio-convert, image-convert, archive-process
+    pub status: String,   // Status: pending, processing, completed, failed
+    pub progress: i32,    // Progress percentage (0-100)
+    pub parameters: serde_json::Value, // Processing parameters
+    pub result: Option<serde_json::Value>, // Processing result
+    pub error: Option<String>, // Error message if failed
+    pub webhook_url: Option<String>, // Webhook URL for notifications
+    pub webhook_secret: Option<String>, // Webhook secret for verification
+    pub cms_id: String,   // CMS identifier
+    pub created_at: DateTime,
+    pub updated_at: DateTime,
+    pub completed_at: Option<DateTime>,
+}
+
+// Batch processing job model
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BatchProcessingJob {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub batch_id: String,               // Batch job ID
+    pub file_ids: Vec<String>,          // List of file IDs to process
+    pub processing_type: String,        // Processing type for all files
+    pub parameters: serde_json::Value,  // Processing parameters
+    pub status: String,                 // Status: pending, processing, completed, failed
+    pub progress: i32,                  // Overall progress percentage (0-100)
+    pub completed_files: i32,           // Number of completed files
+    pub failed_files: i32,              // Number of failed files
+    pub total_files: i32,               // Total number of files
+    pub webhook_url: Option<String>,    // Webhook URL for notifications
+    pub webhook_secret: Option<String>, // Webhook secret for verification
+    pub cms_id: String,                 // CMS identifier
+    pub created_at: DateTime,
+    pub updated_at: DateTime,
+    pub completed_at: Option<DateTime>,
+}
+
+// Archive processing result model
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ArchiveProcessingResult {
+    pub url: String,            // Processed file URL
+    pub width: Option<i32>,     // Image width
+    pub height: Option<i32>,    // Image height
+    pub original_name: String,  // Original file name
+    pub size: i64,              // File size in bytes
+    pub format: Option<String>, // File format
+}
+
+// Webhook notification model
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WebhookNotification {
+    pub job_id: Option<String>,   // Job ID (for single file processing)
+    pub batch_id: Option<String>, // Batch ID (for batch processing)
+    pub cms_id: String,           // CMS identifier
+    pub status: String,           // Status: completed, failed
+    pub progress: i32,            // Progress percentage
+    pub result: Option<serde_json::Value>, // Processing result
+    pub error: Option<String>,    // Error message if failed
+    pub timestamp: DateTime,      // Notification timestamp
+    pub results: Option<Vec<ArchiveProcessingResult>>, // Archive processing results
+    pub completed_files: Option<i32>, // Number of completed files (for batch)
+    pub total_files: Option<i32>, // Total number of files (for batch)
+    pub failed_files: Option<i32>, // Number of failed files (for batch)
+}
+
+// Processing server configuration
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProcessingServerConfig {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+    pub name: String,       // Server name
+    pub host: String,       // Server host URL
+    pub api_key: String,    // API key
+    pub api_secret: String, // API secret
+    pub status: i32,        // Status: 1=enabled, 0=disabled
+    pub created_at: DateTime,
+    pub updated_at: DateTime,
 }

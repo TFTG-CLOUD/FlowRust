@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize, Deserializer};
 use std::fmt;
+use mongodb::bson::DateTime;
 // use crate::models::{Vod, Art}; // Assuming you might want to reuse these
 
 // Custom enum to support both i64 and String for vod_id
@@ -37,6 +38,81 @@ pub struct ApiParams {
     pub pagesize: Option<u64>,
     pub h: Option<u64>,
     pub wd: Option<String>,
+}
+
+// Processing job creation request
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateProcessingJobRequest {
+    pub file_id: String,
+    pub job_type: String,
+    pub parameters: serde_json::Value,
+    pub webhook_url: Option<String>,
+    pub webhook_secret: Option<String>,
+    pub cms_id: String,
+}
+
+// Batch processing job creation request
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateBatchProcessingJobRequest {
+    pub file_ids: Vec<String>,
+    pub processing_type: String,
+    pub parameters: serde_json::Value,
+    pub webhook_url: Option<String>,
+    pub webhook_secret: Option<String>,
+    pub cms_id: String,
+}
+
+// Processing server configuration request
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateProcessingServerRequest {
+    pub name: String,
+    pub host: String,
+    pub api_key: String,
+    pub api_secret: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateProcessingServerRequest {
+    pub name: Option<String>,
+    pub host: Option<String>,
+    pub api_key: Option<String>,
+    pub api_secret: Option<String>,
+    pub status: Option<i32>,
+}
+
+// Webhook verification request
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WebhookVerificationRequest {
+    pub webhook_secret: String,
+    pub signature: String,
+    pub payload: String,
+}
+
+// Processing job response
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProcessingJobResponse {
+    pub job_id: String,
+    pub file_id: String,
+    pub file_name: String,
+    pub job_type: String,
+    pub status: String,
+    pub progress: i32,
+    pub created_at: DateTime,
+    pub updated_at: DateTime,
+}
+
+// Batch processing job response
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BatchProcessingJobResponse {
+    pub batch_id: String,
+    pub file_ids: Vec<String>,
+    pub processing_type: String,
+    pub status: String,
+    pub progress: i32,
+    pub completed_files: i32,
+    pub total_files: i32,
+    pub created_at: DateTime,
+    pub updated_at: DateTime,
 }
 
 // Struct for the JSON response, mirroring the PHP API's output

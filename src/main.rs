@@ -14,6 +14,8 @@ mod scheduled_task;
 mod site_data;
 mod storage_handlers;
 mod storage_service;
+mod processing_handlers;
+mod processing_service;
 mod template;
 mod unified_auth_handlers;
 mod web_handlers;
@@ -38,8 +40,13 @@ use collect_handlers::{get_collect_categories, get_collect_videos, start_collect
 use site_data::SiteDataManager;
 use storage_handlers::{
     admin_storage_page, complete_chunk_upload, create_storage_server, delete_storage_server, generate_archive_upload_url,
-    generate_chunk_upload_url, generate_single_upload_url, test_server_connection,
+    generate_chunk_upload_url, generate_single_upload_url, get_upload_status, test_server_connection,
     update_storage_server,
+};
+use processing_handlers::{
+    create_processing_job, get_processing_job, create_batch_processing_job, get_batch_processing_job,
+    handle_webhook, verify_webhook_signature, get_processing_jobs, get_batch_processing_jobs,
+    get_webhook_notifications,
 };
 use unified_auth_handlers::unified_login;
 use web_handlers::{get_buy_card_config, get_user_vip_info, use_card, vip_check_handler};
@@ -546,6 +553,48 @@ async fn main() -> std::io::Result<()> {
                     .service(
                         web::resource("/storage/upload/chunk/{server_id}/complete/{upload_id}")
                             .route(web::post().to(complete_chunk_upload)),
+                    )
+                    .service(
+                        web::resource("/storage/upload/chunk/{server_id}/status/{upload_id}")
+                            .route(web::get().to(get_upload_status)),
+                    )
+                    // Processing API routes - Requires admin login
+                    .service(
+                        web::resource("/processing/job")
+                            .route(web::post().to(create_processing_job)),
+                    )
+                    .service(
+                        web::resource("/processing/job/{job_id}")
+                            .route(web::get().to(get_processing_job)),
+                    )
+                    .service(
+                        web::resource("/processing/batch")
+                            .route(web::post().to(create_batch_processing_job)),
+                    )
+                    .service(
+                        web::resource("/processing/batch/{batch_id}")
+                            .route(web::get().to(get_batch_processing_job)),
+                    )
+                    .service(
+                        web::resource("/processing/jobs")
+                            .route(web::get().to(get_processing_jobs)),
+                    )
+                    .service(
+                        web::resource("/processing/batch-jobs")
+                            .route(web::get().to(get_batch_processing_jobs)),
+                    )
+                    // Webhook endpoints - Public with signature verification
+                    .service(
+                        web::resource("/webhook/processing")
+                            .route(web::post().to(handle_webhook)),
+                    )
+                    .service(
+                        web::resource("/webhook/verify")
+                            .route(web::post().to(verify_webhook_signature)),
+                    )
+                    .service(
+                        web::resource("/webhook/notifications")
+                            .route(web::get().to(get_webhook_notifications)),
                     ),
             )
             // Config API routes

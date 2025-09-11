@@ -1,7 +1,7 @@
 use crate::dto::ApiResponse;
 use crate::jwt_auth::AdminUser;
 use crate::jwt_auth::AuthenticatedUser;
-use crate::models::{ChunkUploadInfo, PresignedUploadResponse, StorageServer};
+use crate::models::{ChunkUploadInfo, PresignedUploadResponse, StorageServer, UploadStatusResponse};
 use crate::storage_service::{
     CreateStorageServerRequest, GeneratePresignedUrlRequest, StorageService,
     UpdateStorageServerRequest,
@@ -204,5 +204,22 @@ pub async fn admin_storage_page(db: web::Data<Database>) -> Result<HttpResponse>
             eprintln!("Failed to render template: {}", e);
             Ok(HttpResponse::InternalServerError().body("Template error"))
         }
+    }
+}
+
+// 获取上传状态 - 需要管理员权限
+pub async fn get_upload_status(
+    _admin: AdminUser,
+    db: web::Data<Database>,
+    path: web::Path<(String, String)>, // (server_id, upload_id)
+) -> Result<HttpResponse> {
+    let (server_id, upload_id) = path.into_inner();
+    let collection = db.collection::<StorageServer>("storage_servers");
+    
+    let service = StorageService::new(collection);
+
+    match service.get_upload_status(&server_id, &upload_id).await {
+        Ok(response) => Ok(HttpResponse::Ok().json(response)),
+        Err(e) => Ok(HttpResponse::InternalServerError().json(ApiResponse::<()>::error(e))),
     }
 }

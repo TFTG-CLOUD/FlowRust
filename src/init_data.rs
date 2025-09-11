@@ -76,6 +76,26 @@ pub async fn init_website_config(db: &Database) -> Result<(), Box<dyn std::error
             config_sort: 6,
             updated_at: DateTime::now(),
         },
+        Config {
+            id: None,
+            config_key: "open_image".to_string(),
+            config_value: "关闭".to_string(),
+            config_desc: Some("是否开启图集功能".to_string()),
+            config_type: "text".to_string(),
+            config_group: Some("外观设置".to_string()),
+            config_sort: 7,
+            updated_at: DateTime::now(),
+        },
+        Config {
+            id: None,
+            config_key: "open_audio".to_string(),
+            config_value: "关闭".to_string(),
+            config_desc: Some("是否开启音频功能".to_string()),
+            config_type: "text".to_string(),
+            config_group: Some("外观设置".to_string()),
+            config_sort: 8,
+            updated_at: DateTime::now(),
+        },
     ];
 
     let mut created_count = 0;

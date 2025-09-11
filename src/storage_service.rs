@@ -1,5 +1,5 @@
 use crate::dto::ApiResponse;
-use crate::models::{ChunkUploadInfo, PresignedUploadResponse, StorageServer};
+use crate::models::{ChunkUploadInfo, PresignedUploadResponse, StorageServer, UploadStatusResponse};
 use base64::{engine::general_purpose, Engine as _};
 use chrono::{Duration, Utc};
 use futures::TryStreamExt;
@@ -376,6 +376,45 @@ impl StorageService {
         };
 
         Ok(ApiResponse::success(response))
+    }
+
+    // 获取上传状态
+    pub async fn get_upload_status(
+        &self,
+        server_id: &str,
+        upload_id: &str,
+    ) -> Result<ApiResponse<UploadStatusResponse>, String> {
+        let server = self.get_server(server_id).await?;
+        let server_data = server.data.ok_or("Server not found")?;
+
+        if server_data.status != 1 {
+            return Err("Storage server is disabled".to_string());
+        }
+
+        // Call processing server's upload status API
+        let status_url = format!("{}/api/upload/chunked/status/{}", server_data.host, upload_id);
+
+        let response = self
+            .http_client
+            .get(&status_url)
+            .header("X-API-Key", &server_data.api_key)
+            .header("X-API-Secret", &server_data.api_secret)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to call processing server: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!("Processing server returned error status {}: {}", status, error_text));
+        }
+
+        let status_response: UploadStatusResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse processing server response: {}", e))?;
+
+        Ok(ApiResponse::success(status_response))
     }
 
     // 生成签名

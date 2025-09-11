@@ -1,24 +1,24 @@
-# MacCMS Rust Edition
+# FlowRust CMS
 
-![MacCMS Rust Edition](./static/lighthouse.png)
+![FlowRust CMS](./static/lighthouse.png)
 
 ## 视频截图
 
-[![项目演示视频](screenshot.png)](https://raw.githubusercontent.com/TFTG-CLOUD/MacCMS-rust/refs/heads/main/screenshot.mp4)
+[![项目演示视频](screenshot.png)](https://raw.githubusercontent.com/TFTG-CLOUD/FlowRust/refs/heads/main/screenshot.mp4)
 
 ## 🚀 项目简介
 
-MacCMS Rust Edition 是基于 Rust 语言重构的高性能视频内容管理系统（CMS），完全兼容原版 MacCMS 的数据结构和 API 接口，但在性能、并发处理和内存管理方面有质的提升。每满百星我就会制作一个好看的模板，欢迎 star 收藏。
+FlowRust CMS 是基于 Rust 语言开发的高性能多功能内容管理系统（CMS），兼容苹果 CMS 10 采集接口，注重性能、并发处理和内存管理，支持视频、音频和图集漫画等多种内容形式。
 
 拥有配套的完整储存+多媒体处理（音频，视频，图片，压缩包）的多服务器系统：https://github.com/TFTG-CLOUD/cms-back CMS 可对接无限个处理服务器，无限扩容，支持水平扩展，无论是视频、音频，图集漫画都能扩展。
 
 ### ✨ 核心优势
 
-- **🔥 极致性能**: 相同配置服务器下，并发处理能力是原版 MacCMS 的 **10 倍以上**
+- **🔥 极致性能**: 相同配置服务器下，并发处理能力是传统 PHP CMS 的 **10 倍以上**
 - **🛡️ 内存安全**: Rust 语言保障，杜绝内存泄漏和缓冲区溢出
 - **⚡ 异步架构**: 基于 Tokio 和 Actix Web，支持高并发 I/O 操作
 - **📊 实时监控**: 内置任务进度监控和性能统计
-- **🎯 向后兼容**: 完全兼容原版 MacCMS 数据库结构和 API
+- **🎯 向后兼容**: 完全兼容苹果 CMS 数据库结构和 API
 
 ## 📋 系统要求
 
@@ -73,7 +73,7 @@ nano .env
 ```env
 # 数据库连接
 DATABASE_URL=mongodb://localhost:27017
-DATABASE_NAME=maccms_rust
+DATABASE_NAME=flowrust_cms
 
 # 服务器配置
 SERVER_HOST=127.0.0.1
@@ -115,7 +115,7 @@ cp target/release/maccms-rust ../../
 
 - **后端框架**: Actix Web 4.x
 - **异步运行时**: Tokio 1.x
-- **数据库**: MongoDB 4.x
+- **数据库**: MongoDB 8.x
 - **模板引擎**: Tera 1.x
 - **序列化**: Serde + Serde JSON
 - **密码加密**: bcrypt
@@ -195,21 +195,23 @@ src/
 
 ### 基准测试环境
 
-- **服务器**: 4 核 8G，SSD 存储
-- **并发数**: 1000 并发连接
-- **测试时长**: 10 分钟
+- **服务器**: 4 核 8GB 内存 VPS
+- **数据库**: MongoDB 8.0
+- **测试工具**: Apache Bench (ab)
+- **并发数**: 1000
+- **请求数**: 10000
 
 ### 性能指标
 
 实际上，MacCMS Rust 版本的性能要比图示的更高！
 
-| 指标         | MacCMS PHP 版本 | MacCMS Rust 版本 | 提升倍数 |
-| ------------ | --------------- | ---------------- | -------- |
-| 并发处理能力 | ~100 QPS        | ~1200 QPS        | **12x**  |
-| 内存使用     | ~512MB          | ~128MB           | **4x**   |
-| 响应时间     | ~200ms          | ~15ms            | **13x**  |
-| CPU 使用率   | ~80%            | ~25%             | **3.2x** |
-| 数据库查询   | ~50ms           | ~5ms             | **10x**  |
+| 指标         | 传统 PHP CMS | FlowRust CMS | 提升倍数 |
+| ------------ | ------------ | ------------ | -------- |
+| 并发处理能力 | ~100 QPS     | ~1200 QPS    | **12x**  |
+| 内存使用     | ~512MB       | ~128MB       | **4x**   |
+| 响应时间     | ~200ms       | ~15ms        | **13x**  |
+| CPU 使用率   | ~80%         | ~25%         | **3.2x** |
+| 数据库查询   | ~50ms        | ~5ms         | **10x**  |
 
 ### 性能优化技术
 
@@ -325,12 +327,12 @@ fetch("/api/admin/vods?page=2&limit=20&type_id=1&status=1&search=关键词")
 
 ```bash
 # 下载最新版本的 Linux 二进制包
-wget https://github.com/TFTG-CLOUD/maccms-rust/releases/latest/download/linux.zip
+wget https://github.com/TFTG-CLOUD/FlowRust/releases/latest/download/linux.zip
 
 # 解压到目标目录
-sudo mkdir -p /opt/maccms_rust
-sudo unzip linux.zip -d /opt/maccms_rust
-cd /opt/maccms_rust
+sudo mkdir -p /opt/flowrust_cms
+sudo unzip linux.zip -d /opt/flowrust_cms
+cd /opt/flowrust_cms
 ```
 
 #### 2. 创建配置文件
@@ -345,7 +347,7 @@ sudo nano .env
 ```env
 # 数据库连接
 DATABASE_URL=mongodb://localhost:27017
-DATABASE_NAME=maccms_rust
+DATABASE_NAME=flowrust_cms
 
 # 服务器配置
 SERVER_HOST=0.0.0.0
@@ -366,11 +368,11 @@ RUST_LOG=info
 
 ```bash
 # 设置二进制文件执行权限
-sudo chmod +x maccms_rust
+sudo chmod +x flowrust_cms
 
 # 创建专用用户（可选，推荐）
-sudo useradd -r -s /bin/false maccms
-sudo chown -R maccms:maccms /opt/maccms_rust
+sudo useradd -r -s /bin/false flowrust
+sudo chown -R flowrust:flowrust /opt/flowrust_cms
 ```
 
 #### 4. 启动方式
@@ -379,16 +381,16 @@ sudo chown -R maccms:maccms /opt/maccms_rust
 
 ```bash
 # 切换到应用目录
-cd /opt/maccms_rust
+cd /opt/flowrust_cms
 
 # 后台启动
-nohup ./maccms_rust > maccms.log 2>&1 &
+nohup ./flowrust_cms > flowrust.log 2>&1 &
 
 # 查看进程状态
-ps aux | grep maccms_rust
+ps aux | grep flowrust_cms
 
 # 查看日志
-tail -f maccms.log
+tail -f flowrust.log
 ```
 
 **方式二：使用 systemctl 服务管理（推荐）**
@@ -396,32 +398,32 @@ tail -f maccms.log
 创建服务用户（仅支持读写 maccms 文件夹）：
 
 ```bash
-sudo useradd -r -s /bin/false -m -d /opt/maccms_rust maccms
-sudo groupadd maccms
-sudo usermod -aG maccms maccms
-sudo chown -R maccms:maccms /opt/maccms_rust
-sudo chmod -R u+rwX /opt/maccms_rust
-sudo chmod +x /opt/maccms_rust/maccms_rust
+sudo useradd -r -s /bin/false -m -d /opt/flowrust_cms flowrust
+sudo groupadd flowrust
+sudo usermod -aG flowrust flowrust
+sudo chown -R flowrust:flowrust /opt/flowrust_cms
+sudo chmod -R u+rwX /opt/flowrust_cms
+sudo chmod +x /opt/flowrust_cms/flowrust_cms
 ```
 
 创建 systemd 服务文件：
 
 ```bash
-sudo nano /etc/systemd/system/maccms-rust.service
+sudo nano /etc/systemd/system/flowrust-cms.service
 ```
 
 服务配置内容：
 
 ```ini
 [Unit]
-Description=MacCMS Rust Edition
+Description=FlowRust CMS
 
 [Service]
 Type=simple
-User=maccms
-Group=maccms
-WorkingDirectory=/opt/maccms_rust
-ExecStart=/opt/maccms_rust/maccms_rust
+User=flowrust
+Group=flowrust
+WorkingDirectory=/opt/flowrust_cms
+ExecStart=/opt/flowrust_cms/flowrust_cms
 Restart=always
 RestartSec=10
 KillMode=mixed
@@ -434,7 +436,7 @@ Environment=RUST_LOG=info
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/opt/maccms_rust
+ReadWritePaths=/opt/flowrust_cms
 
 [Install]
 WantedBy=multi-user.target
@@ -447,22 +449,22 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 
 # 启动服务
-sudo systemctl start maccms-rust
+sudo systemctl start flowrust-cms
 
 # 设置开机自启
-sudo systemctl enable maccms-rust
+sudo systemctl enable flowrust-cms
 
 # 查看服务状态
-sudo systemctl status maccms-rust
+sudo systemctl status flowrust-cms
 
 # 查看服务日志
-sudo journalctl -u maccms-rust -f
+sudo journalctl -u flowrust-cms -f
 
 # 重启服务
-sudo systemctl restart maccms-rust
+sudo systemctl restart flowrust-cms
 
 # 停止服务
-sudo systemctl stop maccms-rust
+sudo systemctl stop flowrust-cms
 ```
 
 #### 5. 验证部署
@@ -531,54 +533,54 @@ systemctl start docker
 systemctl enable docker
 
 # 创建项目文件夹
-mkdir -p /home/maccms-rust
+mkdir -p /home/flowrust-cms
 
 #进入文件夹，下载Dockerfile
-cd /home/maccms-rust
-wget https://raw.githubusercontent.com/TFTG-CLOUD/MacCMS-rust/refs/heads/main/Dockerfile
-wget https://raw.githubusercontent.com/TFTG-CLOUD/MacCMS-rust/refs/heads/main/entrypoint.sh
+cd /home/flowrust-cms
+wget https://raw.githubusercontent.com/TFTG-CLOUD/FlowRust/refs/heads/main/Dockerfile
+wget https://raw.githubusercontent.com/TFTG-CLOUD/FlowRust/refs/heads/main/entrypoint.sh
 
 # 构建 Docker 镜像
-docker build -t maccms-rust:latest .
+docker build -t flowrust-cms:latest .
  #启动镜像
 docker run -d \
-  --name maccms-rust \
+  --name flowrust-cms \
   -p 8080:8080 \
   -e ADMIN_USER=myuser \
   -e ADMIN_PASS=mypassword \
-  -v ./maccms_data:/var/lib/mongodb \
-  -v ./maccms-rust:/app \
-  -v ./maccms_logo:/var/log \
+  -v ./flowrust_data:/var/lib/mongodb \
+  -v ./flowrust-cms:/app \
+  -v ./flowrust_logs:/var/log \
   --restart unless-stopped \
-  maccms-rust:latest
+  flowrust-cms:latest
 
 #相关参数和文件夹说明
 ADMIN_USER 设置后台用户名
 ADMIN_PASS 设置后台密码，推荐复杂点
-./maccms_data 数据库文件夹，可自行备份
-./maccms-rust 程序源码目录
-./maccms_logo 相关运行日志
+./flowrust_data 数据库文件夹，可自行备份
+./flowrust-cms 程序源码目录
+./flowrust_logs 相关运行日志
 
 # 查看容器状态
 docker ps
 
 # 查看日志
-docker logs maccms-rust
+docker logs flowrust-cms
 
 # 停止容器
-docker stop maccms-rust
+docker stop flowrust-cms
 
 # 启动容器
-docker start maccms-rust
+docker start flowrust-cms
 
 # 重启容器
-docker restart maccms-rust
+docker restart flowrust-cms
 
 # 删除容器
-docker rm maccms-rust
+docker rm flowrust-cms
 
 # 进入容器
-docker exec -it maccms-rust /bin/bash
+docker exec -it flowrust-cms /bin/bash
 ```
 
 ## 🛠️ 开发指南
@@ -666,15 +668,15 @@ RUST_LOG=info cargo run > maccms.log 2>&1
 
 ## 🔄 升级指南
 
-### 从 MacCMS PHP 版本迁移
+### 从传统 PHP CMS 迁移
 
-1. **数据迁移**: 直接使用原版 maccms 提供的采集 API 进行数据迁移
+1. **数据迁移**: 直接使用苹果 CMS 提供的采集 API 进行数据迁移
 
 ### 版本升级
 
 ```bash
 # 备份数据库
-mongodump --db maccms_rust --out backup/
+mongodump --db flowrust_cms --out backup/
 
 # 更新代码
 git pull origin main
@@ -683,7 +685,7 @@ git pull origin main
 cargo build --release
 
 # 重启服务
-sudo systemctl restart maccms-rust
+sudo systemctl restart flowrust-cms
 ```
 
 ## 📈 未来规划
@@ -699,4 +701,4 @@ sudo systemctl restart maccms-rust
 
 ---
 
-**MacCMS Rust Edition** - 为现代 Web 而生的高性能视频内容管理系统
+**FlowRust CMS** - 为现代 Web 而生的高性能视频内容管理系统
