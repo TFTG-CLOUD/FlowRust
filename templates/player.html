@@ -272,6 +272,80 @@ endblock
         initPlayHistory();
     });
 
+    // 播放结束时显示下一集提示
+    function showNextEpisodeModal() {
+        const nextBtn = document.getElementById('nextEpisode');
+        if (!nextBtn || nextBtn.disabled) {
+            // 没有下一集，不显示提示
+            return;
+        }
+
+        const nextUrl = nextBtn.getAttribute('data-url');
+        if (!nextUrl) {
+            return;
+        }
+
+        // 创建modal弹窗
+        const modal = document.createElement('div');
+        modal.id = 'nextEpisodeModal';
+        modal.innerHTML = `
+            <div id="nextEpisodeModalOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div class="bg-card-bg rounded-2xl p-6 md:p-8 max-w-md mx-4 shadow-xl">
+                    <h3 class="text-xl md:text-2xl font-bold mb-4 text-center">即将播放下一集</h3>
+                    <p class="text-secondary mb-6 text-center">
+                        将在 <span id="countdown" class="text-primary font-bold text-lg">5</span> 秒后自动播放下一集
+                    </p>
+                    <div class="flex gap-4 justify-center">
+                        <button id="playNextBtn" class="bg-primary hover:bg-primary-dark text-white px-6 py-3 rounded-lg font-medium transition-colors">
+                            <i class="fas fa-play mr-2"></i>立刻播放
+                        </button>
+                        <button id="cancelBtn" class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg font-medium transition-colors">
+                            <i class="fas fa-times mr-2"></i>取消
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        let countdown = 5;
+        const countdownElement = document.getElementById('countdown');
+        const playNextBtn = document.getElementById('playNextBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const modalOverlay = document.getElementById('nextEpisodeModalOverlay');
+
+        // 倒计时功能
+        const countdownInterval = setInterval(() => {
+            countdown--;
+            countdownElement.textContent = countdown;
+
+            if (countdown <= 0) {
+                clearInterval(countdownInterval);
+                window.location.href = nextUrl;
+            }
+        }, 1000);
+
+        // 立刻播放按钮
+        playNextBtn.addEventListener('click', () => {
+            clearInterval(countdownInterval);
+            window.location.href = nextUrl;
+        });
+
+        // 取消按钮
+        cancelBtn.addEventListener('click', () => {
+            clearInterval(countdownInterval);
+            modal.remove();
+        });
+
+        // 点击背景关闭
+        modalOverlay.addEventListener('click', (e) => {
+            if (e.target === modalOverlay) {
+                clearInterval(countdownInterval);
+                modal.remove();
+            }
+        });
+    }
+
     // VIP权限验证函数
     async function checkVipAccess() {
         const videoId = "{{ video._id['$oid'] }}";
@@ -421,6 +495,9 @@ endblock
     function initPlayer() {
         const video = document.getElementById('video-player');
         const videoSrc = video.querySelector('source').src;
+
+        // Add video ended event listener
+        video.addEventListener('ended', showNextEpisodeModal);
 
         // Check if the video source is an m3u8 file
         if (videoSrc.includes('.m3u8')) {
