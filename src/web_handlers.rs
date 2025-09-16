@@ -13,10 +13,10 @@ fn get_play_info(
     video: &Vod,
     play_source: usize,
     play_idx: usize,
-) -> Result<(String, String), Box<dyn std::error::Error>> {
+) -> Result<(String, String, String), Box<dyn std::error::Error>> {
     if let Some(source) = video.vod_play_urls.get(play_source) {
         if let Some(url_info) = source.urls.get(play_idx) {
-            Ok((url_info.url.clone(), url_info.name.clone()))
+            Ok((source.source_name.clone(), url_info.url.clone(), url_info.name.clone()))
         } else {
             Err("Play URL not found".into())
         }
@@ -651,11 +651,12 @@ pub async fn video_player_handler(
             context.insert("video", &video);
 
             // 获取播放链接
-            let (play_url, current_episode_name) = match get_play_info(&video, play_source, play_idx) {
-                Ok((url, name)) => (url, name),
+            let (play_source_name, play_url, current_episode_name) = match get_play_info(&video, play_source, play_idx) {
+                Ok((source_name, url, name)) => (source_name, url, name),
                 Err(e) => return Err(e),
             };
 
+            context.insert("play_source_name", &play_source_name);
             context.insert("play_url", &play_url);
             context.insert("play_index", &play_idx);
             context.insert("play_source", &play_source);
@@ -1422,6 +1423,37 @@ pub async fn user_profile_page(
     }
 }
 
+// 图集投稿页面
+pub async fn submit_image_page(
+    db: web::Data<Database>,
+    site_data_manager: web::Data<crate::site_data::SiteDataManager>,
+) -> impl Responder {
+    match with_site_data(
+        db.clone(),
+        site_data_manager.clone(),
+        |context, _site_data| async move {
+            TERA.render("user/submit_image.html", &context)
+                .map_err(|e| {
+                    handle_template_rendering_error(
+                        "user/submit_image.html",
+                        &e,
+                        Some("Image submission page"),
+                        Some("Public access - authentication handled by frontend")
+                    );
+                    Box::new(e) as Box<dyn std::error::Error>
+                })
+        },
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(e) => {
+            println!("Image submission page error: {}", e);
+            HttpResponse::InternalServerError().body(format!("Error: {}", e))
+        }
+    }
+}
+
 // DTO for card usage request
 #[derive(Debug, Deserialize)]
 pub struct UseCardRequest {
@@ -1437,25 +1469,25 @@ pub struct UseCardResponse {
 
 // Get user VIP info
 pub async fn get_user_vip_info(user: crate::jwt_auth::AuthenticatedUser) -> impl Responder {
-    let user = user.user;
+    let user_info = &user.user;
 
     let current_time = chrono::Utc::now();
-    let is_vip = if let Some(vip_end) = user.vip_end_time {
+    let is_vip = if let Some(vip_end) = &user_info.vip_end_time {
         vip_end.timestamp_millis() > current_time.timestamp_millis()
     } else {
         false
     };
 
-    let vip_end_date = user.vip_end_time.map(|end| {
+    let vip_end_date = user_info.vip_end_time.as_ref().map(|end| {
         end.timestamp_millis() as i64
     });
 
     HttpResponse::Ok().json(serde_json::json!({
         "success": true,
-        "vip_level": user.vip_level.unwrap_or(0),
+        "vip_level": user_info.vip_level.unwrap_or(0),
         "is_vip": is_vip,
         "vip_end_date": vip_end_date,
-        "user_points": user.user_points
+        "user_points": user_info.user_points
     }))
 }
 
@@ -1491,7 +1523,7 @@ pub async fn use_card(
     req: web::Json<UseCardRequest>,
     user: crate::jwt_auth::AuthenticatedUser,
 ) -> impl Responder {
-    let user = user.user;
+    let user_info = &user.user;
 
     let card_code = &req.card_code;
     
@@ -1536,8 +1568,8 @@ pub async fn use_card(
 
     // Calculate new VIP expiration date
     let current_time = chrono::Utc::now();
-    let current_vip_end = user.vip_end_time.map(|end| end.timestamp_millis()).unwrap_or(0);
-    let current_vip_level = user.vip_level.unwrap_or(0);
+    let current_vip_end = user_info.vip_end_time.as_ref().map(|end| end.timestamp_millis()).unwrap_or(0);
+    let current_vip_level = user_info.vip_level.unwrap_or(0);
     let duration_ms = (card.duration_days as i64) * 24 * 60 * 60 * 1000;
     
     let (new_vip_end, message_suffix) = if current_vip_level == card.vip_level {
@@ -1571,7 +1603,7 @@ pub async fn use_card(
     };
 
     if let Err(e) = user_collection
-        .update_one(doc! { "_id": &user.id }, user_update, None)
+        .update_one(doc! { "_id": &user_info.id }, user_update, None)
         .await
     {
         eprintln!("Failed to update user VIP status: {}", e);
@@ -1585,7 +1617,7 @@ pub async fn use_card(
     let card_update = doc! {
         "$set": {
             "used": true,
-            "used_by": user.id.clone(),
+            "used_by": user_info.id.clone(),
             "used_at": mongodb::bson::DateTime::now()
         }
     };
@@ -1654,25 +1686,8 @@ pub async fn vip_check_handler(
 
     // Check if content is public (need_vip = 0)
     if video.need_vip == 0 {
-        // Public content, grant access without login
-        let mut play_url = None;
-        let mut episode_name = None;
-        
-        // Get first available play URL
-        if let Some(source) = video.vod_play_urls.first() {
-            if let Some(url_info) = source.urls.first() {
-                play_url = Some(url_info.url.clone());
-                episode_name = Some(url_info.name.clone());
-            }
-        }
-        
-        return HttpResponse::Ok().json(crate::dto::VipCheckResponse {
-            success: true,
-            has_access: true,
-            message: "公开内容，访问成功".to_string(),
-            play_url,
-            episode_name,
-        });
+        // Public content, get play info and grant access
+        return get_play_info_and_respond(&video, &request, true, "公开内容，访问成功".to_string());
     }
 
     // For VIP content, check user login status
@@ -1691,11 +1706,6 @@ pub async fn vip_check_handler(
 
     // Check VIP access for logged-in user
     let need_vip = video.need_vip;
-    let mut has_access = false;
-    let mut play_url = None;
-    let mut episode_name = None;
-
-    // VIP content, check user permissions
     let user_vip_level = user.vip_level.unwrap_or(0);
     let is_vip_valid = if let Some(vip_end) = user.vip_end_time {
         vip_end.timestamp_millis() > chrono::Utc::now().timestamp_millis()
@@ -1704,28 +1714,83 @@ pub async fn vip_check_handler(
     };
 
     if user_vip_level >= need_vip && is_vip_valid {
-        // User has sufficient VIP access
-        has_access = true;
-        // Get first available play URL
-        if let Some(source) = video.vod_play_urls.first() {
-            if let Some(url_info) = source.urls.first() {
-                play_url = Some(url_info.url.clone());
-                episode_name = Some(url_info.name.clone());
-            }
-        }
+        // User has sufficient VIP access, get play info
+        get_play_info_and_respond(&video, &request, true, "访问权限验证成功".to_string())
+    } else {
+        // User doesn't have sufficient VIP access
+        HttpResponse::Ok().json(crate::dto::VipCheckResponse {
+            success: true,
+            has_access: false,
+            message: format!("该内容需要VIP{}权限", need_vip),
+            play_url: None,
+            episode_name: None,
+        })
+    }
+}
+
+// Helper function to get play info and create response
+fn get_play_info_and_respond(
+    video: &Vod,
+    request: &crate::dto::VipCheckRequest,
+    has_access: bool,
+    message: String,
+) -> HttpResponse {
+    if !has_access {
+        return HttpResponse::Ok().json(crate::dto::VipCheckResponse {
+            success: true,
+            has_access: false,
+            message,
+            play_url: None,
+            episode_name: None,
+        });
     }
 
-    let message = if has_access {
-        "访问权限验证成功".to_string()
-    } else {
-        format!("该内容需要VIP{}权限", need_vip)
+    // Convert string parameters to usize
+    let play_source_idx = match request.play_source.parse::<usize>() {
+        Ok(idx) => idx,
+        Err(_) => {
+            return HttpResponse::BadRequest().json(crate::dto::VipCheckResponse {
+                success: false,
+                has_access: false,
+                message: "无效的播放源索引".to_string(),
+                play_url: None,
+                episode_name: None,
+            });
+        }
+    };
+    
+    let play_index_idx = match request.play_index.parse::<usize>() {
+        Ok(idx) => idx,
+        Err(_) => {
+            return HttpResponse::BadRequest().json(crate::dto::VipCheckResponse {
+                success: false,
+                has_access: false,
+                message: "无效的播放索引".to_string(),
+                play_url: None,
+                episode_name: None,
+            });
+        }
     };
 
-    HttpResponse::Ok().json(crate::dto::VipCheckResponse {
-        success: true,
-        has_access,
-        message,
-        play_url,
-        episode_name,
-    })
+    // Get play URL using converted indices
+    match get_play_info(video, play_source_idx, play_index_idx) {
+        Ok((_, play_url, episode_name)) => {
+            HttpResponse::Ok().json(crate::dto::VipCheckResponse {
+                success: true,
+                has_access: true,
+                message,
+                play_url: Some(play_url),
+                episode_name: Some(episode_name),
+            })
+        }
+        Err(_) => {
+            HttpResponse::BadRequest().json(crate::dto::VipCheckResponse {
+                success: false,
+                has_access: false,
+                message: "播放信息获取失败".to_string(),
+                play_url: None,
+                episode_name: None,
+            })
+        }
+    }
 }

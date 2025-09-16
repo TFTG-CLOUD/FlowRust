@@ -95,8 +95,8 @@ sudo systemctl start mongod
 ### 2. Clone Project / 克隆项目
 
 ```bash
-git clone https://github.com/TFTG-CLOUD/MacCMS-rust
-cd MacCMS-rust
+git clone https://github.com/TFTG-CLOUD/FlowRust
+cd FlowRust
 ```
 
 ### 3. Configure Environment Variables / 配置环境变量
@@ -154,10 +154,10 @@ cargo run
 cargo build --release
 
 # Copy production version to root directory
-cp target/release/maccms-rust ../../
+cp target/release/flowrust_cms ../../
 
 # Run production version
-./maccms-rust
+./flowrust_cms
 ```
 
 ```bash
@@ -168,10 +168,10 @@ cargo run
 cargo build --release
 
 # 复制生产版本到根目录
-cp target/release/maccms-rust ../../
+cp target/release/flowrust_cms ../../
 
 # 运行生产版本
-./maccms-rust
+./flowrust_cms
 ```
 
 ### 5. Access System / 访问系统
@@ -346,9 +346,9 @@ src/
 
 ### Performance Metrics / 性能指标
 
-Actually, the performance of the MacCMS Rust version is even higher than shown in the chart!
+Actually, the performance of the FlowRust version is even higher than shown in the chart!
 
-实际上，MacCMS Rust 版本的性能要比图示的更高！
+实际上，FlowRust 版本的性能要比图示的更高！
 
 | Metric / 指标                        | Traditional PHP CMS | FlowRust CMS | Improvement / 提升倍数 |
 | ------------------------------------ | ------------------- | ------------ | ---------------------- |
@@ -672,9 +672,9 @@ tail -f flowrust.log
 
 **Method 2: Use systemctl service management (Recommended) / 方式二：使用 systemctl 服务管理（推荐）**
 
-Create service user (read/write access to maccms folder only):
+Create service user (read/write access to flowrust_cms folder only):
 
-创建服务用户（仅支持读写 maccms 文件夹）：
+创建服务用户（仅支持读写 flowrust_cms 文件夹）：
 
 ```bash
 sudo useradd -r -s /bin/false -m -d /opt/flowrust_cms flowrust

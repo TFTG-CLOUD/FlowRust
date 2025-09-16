@@ -1,7 +1,7 @@
 [package]
-name = "maccms_rust"
-version = "0.1.0"
-edition = "2021"
+name = "flowrust_cms"
+version = "4.1.0"
+edition = "2024"
 
 [dependencies]
 actix-web = { version = "4", features = ["compress-gzip", "compress-brotli"] }

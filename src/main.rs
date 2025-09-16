@@ -6,16 +6,17 @@ mod auth_handlers;
 mod collect_handlers;
 mod db;
 mod dto;
+mod image_handlers;
 mod index_manager;
 mod init_data;
 mod jwt_auth;
 mod models;
+mod processing_handlers;
+mod processing_service;
 mod scheduled_task;
 mod site_data;
 mod storage_handlers;
 mod storage_service;
-mod processing_handlers;
-mod processing_service;
 mod template;
 mod unified_auth_handlers;
 mod web_handlers;
@@ -37,36 +38,41 @@ use admin_handlers::{
 };
 use auth_handlers::{get_current_user, logout, register};
 use collect_handlers::{get_collect_categories, get_collect_videos, start_collect_task};
-use site_data::SiteDataManager;
-use storage_handlers::{
-    admin_storage_page, complete_chunk_upload, create_storage_server, delete_storage_server, generate_archive_upload_url,
-    generate_chunk_upload_url, generate_single_upload_url, get_upload_status, test_server_connection,
-    update_storage_server,
+use image_handlers::{
+    delete_image, get_image_detail, get_user_images, handle_image_processing_webhook, submit_image,
+    update_image,
 };
 use processing_handlers::{
-    create_processing_job, get_processing_job, create_batch_processing_job, get_batch_processing_job,
-    handle_webhook, verify_webhook_signature, get_processing_jobs, get_batch_processing_jobs,
-    get_webhook_notifications,
+    create_batch_processing_job, create_processing_job, get_batch_processing_job,
+    get_batch_processing_jobs, get_processing_job, get_processing_jobs, get_webhook_notifications,
+    handle_webhook, verify_webhook_signature,
+};
+use site_data::SiteDataManager;
+use storage_handlers::{
+    admin_storage_page, complete_chunk_upload, create_storage_server, delete_storage_server,
+    generate_archive_upload_url, generate_chunk_upload_url, generate_single_upload_url,
+    get_upload_status, test_server_connection, update_storage_server,
 };
 use unified_auth_handlers::unified_login;
-use web_handlers::{get_buy_card_config, get_user_vip_info, use_card, vip_check_handler};
+use web_handlers::{get_buy_card_config, get_user_vip_info, submit_image_page, use_card, vip_check_handler};
 
 use actix_files::Files;
 use actix_web::cookie::Key;
-use actix_web::dev::{forward_ready, Service, Transform};
-use actix_web::http::header::{HeaderValue, CACHE_CONTROL};
+use actix_web::dev::{Service, Transform, forward_ready};
+use actix_web::http::header::{CACHE_CONTROL, HeaderValue};
 use actix_web::{
+    App, Error, HttpResponse, HttpServer, Responder, Result,
     dev::{ServiceRequest, ServiceResponse},
-    get, middleware, web, App, Error, HttpResponse, HttpServer, Responder, Result,
+    get, middleware, web,
 };
-use actix_web_flash_messages::{storage::CookieMessageStore, FlashMessagesFramework};
+use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageStore};
 use futures::stream::TryStreamExt;
 use mongodb::Database;
 use std::env;
-use std::future::{ready, Ready};
+use std::future::{Ready, ready};
 use std::rc::Rc;
 
-use crate::storage_handlers::{get_storage_server, get_storage_servers};
+use crate::storage_handlers::{get_storage_server, get_storage_servers, get_user_storage_server};
 
 // Static file cache middleware
 pub struct StaticCacheMiddleware;
@@ -270,6 +276,10 @@ async fn main() -> std::io::Result<()> {
             .service(
                 web::resource("/user/profile")
                     .route(web::get().to(web_handlers::user_profile_page)),
+            )
+            .service(
+                web::resource("/user/submit-image")
+                    .route(web::get().to(web_handlers::submit_image_page)),
             )
             // Static files with cache configuration
             .service(
@@ -537,6 +547,11 @@ async fn main() -> std::io::Result<()> {
                     .service(web::resource("/use-card").route(web::post().to(use_card)))
                     .service(web::resource("/vip-info").route(web::get().to(get_user_vip_info)))
                     .service(web::resource("/vip-check").route(web::post().to(vip_check_handler)))
+                    // Storage servers - Requires user login
+                    .service(
+                        web::resource("/storage/servers")
+                            .route(web::get().to(get_user_storage_server)),
+                    )
                     // Storage Upload URLs - Requires user login
                     .service(
                         web::resource("/storage/upload/single/{server_id}")
@@ -547,16 +562,21 @@ async fn main() -> std::io::Result<()> {
                             .route(web::post().to(generate_chunk_upload_url)),
                     )
                     .service(
-                        web::resource("/storage/upload/archive/{server_id}")
-                            .route(web::post().to(generate_archive_upload_url)),
-                    )
-                    .service(
                         web::resource("/storage/upload/chunk/{server_id}/complete/{upload_id}")
                             .route(web::post().to(complete_chunk_upload)),
                     )
                     .service(
                         web::resource("/storage/upload/chunk/{server_id}/status/{upload_id}")
                             .route(web::get().to(get_upload_status)),
+                    )
+                    // Image Gallery API routes - Requires user login
+                    .service(web::resource("/images/submit").route(web::post().to(submit_image)))
+                    .service(web::resource("/images").route(web::get().to(get_user_images)))
+                    .service(
+                        web::resource("/images/{image_id}")
+                            .route(web::get().to(get_image_detail))
+                            .route(web::put().to(update_image))
+                            .route(web::delete().to(delete_image)),
                     )
                     // Processing API routes - Requires admin login
                     .service(
@@ -576,8 +596,7 @@ async fn main() -> std::io::Result<()> {
                             .route(web::get().to(get_batch_processing_job)),
                     )
                     .service(
-                        web::resource("/processing/jobs")
-                            .route(web::get().to(get_processing_jobs)),
+                        web::resource("/processing/jobs").route(web::get().to(get_processing_jobs)),
                     )
                     .service(
                         web::resource("/processing/batch-jobs")
@@ -585,8 +604,7 @@ async fn main() -> std::io::Result<()> {
                     )
                     // Webhook endpoints - Public with signature verification
                     .service(
-                        web::resource("/webhook/processing")
-                            .route(web::post().to(handle_webhook)),
+                        web::resource("/webhook/processing").route(web::post().to(handle_webhook)),
                     )
                     .service(
                         web::resource("/webhook/verify")
@@ -596,6 +614,11 @@ async fn main() -> std::io::Result<()> {
                         web::resource("/webhook/notifications")
                             .route(web::get().to(get_webhook_notifications)),
                     ),
+            )
+            // Public webhook routes
+            .service(
+                web::resource("/api/webhook/image-processing")
+                    .route(web::post().to(handle_image_processing_webhook)),
             )
             // Config API routes
             .service(

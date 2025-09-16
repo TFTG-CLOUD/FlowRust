@@ -1,10 +1,16 @@
 {% extends "base.html" %}
 
-{% block title %}{{ video.vod_name }} - 在线播放 - {{ SITENAME }}{% endblock %}
+{% block title %}{{ video.vod_name }} {% if current_episode_name %}{{current_episode_name }}{%else %}HD{% endif %} -
+{{play_source_name}} 在线播放 - {{ SITENAME }}{% endblock %}
 
-{% block description %}{{ video.vod_name }}在线播放，{{ video.vod_content }}{% endblock %}
+{% block description %}{{ video.vod_name }} {% if current_episode_name %}{{
+current_episode_name }}{%
+else %}HD{% endif %} {{play_source_name}} 在线播放，{{ video.vod_content }}{% endblock %}
 
-{% block keywords %}{{ video.vod_name }},在线播放,{{ video.vod_class }},{{ video.vod_year }},{{ video.vod_area }}{% endblock
+{% block keywords %}{{ video.vod_name }} {% if current_episode_name %}{{
+current_episode_name }}{%
+else %}HD{% endif %},{{play_source_name}} 在线播放,{{ video.vod_class }},{{ video.vod_year }},{{ video.vod_area }}{%
+endblock
 %}
 
 {% block content %}
@@ -28,9 +34,11 @@
 
     <!-- 播放器区域 -->
     <section class="bg-card-bg rounded-2xl p-5 md:p-6 mb-6 md:mb-10 shadow-xl">
-        <h2 class="mobile-text-xl md:text-2xl font-bold mb-4 md:mb-6 flex items-center">
-            <i class="fas fa-play-circle text-primary mr-3"></i>{{ video.vod_name }} 在线播放
-        </h2>
+        <h1 class="mobile-text-xl md:text-2xl font-bold mb-4 md:mb-6 flex items-center">
+            <i class="fas fa-play-circle text-primary mr-3"></i>{{ video.vod_name }} {% if current_episode_name %}{{
+            current_episode_name }}{%
+            else %}HD{% endif %} {{play_source_name}} 在线播放
+        </h1>
 
         <!-- 视频播放器容器 -->
         <div class="video-container">
@@ -112,7 +120,7 @@
 
             <div class="text-secondary hidden md:block">
                 当前播放: <span class="text-white font-medium">{% if current_episode_name %}{{ current_episode_name }}{%
-                    else %}第1集{% endif %}</span>
+                    else %}HD{% endif %}</span>
             </div>
 
             <button class="episode-btn" id="nextEpisode" {% if play_index>= video.vod_play_urls[play_source].urls|length
@@ -259,7 +267,7 @@
     document.addEventListener('DOMContentLoaded', function () {
         // 使用新的VIP验证API检查权限
         checkVipAccess();
-        
+
         initTabSwitching();
         initPlayHistory();
     });
@@ -267,51 +275,54 @@
     // VIP权限验证函数
     async function checkVipAccess() {
         const videoId = "{{ video._id['$oid'] }}";
-        const videoNeedVip = {{ video.need_vip | default(value=0) }};
-        
-        try {
-            // 获取用户token
-            const token = localStorage.getItem('auth_token');
-            
-            if (!token && videoNeedVip > 0) {
-                // VIP内容但用户未登录
-                showVipRestricted('请先登录以观看VIP内容', false);
-                return;
-            }
-            
-            // 调用VIP验证API
-            const response = await fetch('/api/user/vip-check', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ video_id: videoId })
-            });
-            
-            const data = await response.json();
-            
-            if (data.success && data.has_access) {
-                // 有权限，插入视频播放器并初始化
-                insertVideoPlayer(data.play_url, data.episode_name);
-                initPlayer();
-            } else {
-                // 无权限，显示VIP限制提示
-                const showUpgradeButton = videoNeedVip > 0;
-                showVipRestricted(data.message || '权限不足', showUpgradeButton);
-            }
-        } catch (error) {
-            console.error('VIP权限验证失败:', error);
-            
-            if (videoNeedVip === 0) {
-                // 公开内容，直接显示播放器
-                insertVideoPlayer();
-                initPlayer();
-            } else {
-                // VIP内容但验证失败
-                showVipRestricted('权限验证失败，请刷新页面重试', true);
-            }
+        const videoNeedVip = {{ video.need_vip | default (value = 0)
+    }};
+
+    try {
+        // 获取用户token
+        const token = localStorage.getItem('auth_token');
+        const play_source = "{{ play_source }}";
+        const play_index = "{{ play_index }}";
+
+        if (!token && videoNeedVip > 0) {
+            // VIP内容但用户未登录
+            showVipRestricted('请先登录以观看VIP内容', false);
+            return;
         }
+
+        // 调用VIP验证API
+        const response = await fetch('/api/user/vip-check', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ video_id: videoId, play_source: play_source, play_index: play_index })
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.has_access) {
+            // 有权限，插入视频播放器并初始化
+            insertVideoPlayer(data.play_url, data.episode_name);
+            initPlayer();
+        } else {
+            // 无权限，显示VIP限制提示
+            const showUpgradeButton = videoNeedVip > 0;
+            showVipRestricted(data.message || '权限不足', showUpgradeButton);
+        }
+    } catch (error) {
+        console.error('VIP权限验证失败:', error);
+
+        if (videoNeedVip === 0) {
+            // 公开内容，直接显示播放器
+            insertVideoPlayer();
+            initPlayer();
+        } else {
+            // VIP内容但验证失败
+            showVipRestricted('权限验证失败，请刷新页面重试', true);
+        }
+    }
     }
 
     // 插入视频播放器
@@ -321,7 +332,7 @@
         const playUrl = apiPlayUrl || "{{ play_url | safe }}";
         const posterUrl = "{{ video.vod_pic | default(value='https://images.unsplash.com/photo-1536440136628-849c177e76a1?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&q=80') }}";
         const isM3u8 = playUrl.includes('.m3u8');
-        
+
         // 如果API返回了剧集名称，更新当前播放的剧集显示
         if (apiEpisodeName) {
             const currentEpisodeSpan = document.querySelector('.episode-controls .text-white');
@@ -329,7 +340,7 @@
                 currentEpisodeSpan.textContent = apiEpisodeName;
             }
         }
-        
+
         videoContainer.innerHTML = `
             <video id="video-player" class="video-player" preload="metadata"
                 poster="${posterUrl}"
@@ -343,16 +354,16 @@
             </video>
         `;
     }
-    
+
     // 显示VIP限制提示
     function showVipRestricted(message, showUpgradeButton) {
         const videoContainer = document.querySelector('.video-container');
-        const upgradeButtonHtml = showUpgradeButton ? 
+        const upgradeButtonHtml = showUpgradeButton ?
             `<button onclick="window.location.href='/user/profile'" 
                     class="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-8 py-3 rounded-lg font-medium transition-all duration-200 transform hover:scale-105">
                 <i class="fas fa-credit-card mr-2"></i>购买卡卷升级
             </button>` : '';
-        
+
         videoContainer.innerHTML = `
             <div id="vip-access-container">
                 <!-- VIP限制提示 -->
@@ -375,7 +386,7 @@
             </div>
         `;
     }
-    
+
     // UserAuth等待函数已移除，权限检查在后端完成
 
     // Initialize play history tracking

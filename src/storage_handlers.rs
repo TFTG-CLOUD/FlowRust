@@ -1,13 +1,16 @@
 use crate::dto::ApiResponse;
 use crate::jwt_auth::AdminUser;
 use crate::jwt_auth::AuthenticatedUser;
-use crate::models::{ChunkUploadInfo, PresignedUploadResponse, StorageServer, UploadStatusResponse};
+use crate::models::{
+    ChunkUploadInfo, PresignedUploadResponse, StorageServer, UploadStatusResponse,
+};
 use crate::storage_service::{
     CreateStorageServerRequest, GeneratePresignedUrlRequest, StorageService,
     UpdateStorageServerRequest,
 };
-use actix_web::{web, HttpResponse, Result};
+use actix_web::{HttpResponse, Result, web};
 use mongodb::Database;
+use rand::seq::SliceRandom;
 use tera::Context;
 
 // 获取单个
@@ -22,6 +25,30 @@ pub async fn get_storage_server(
 
     match service.get_server(&server_id).await {
         Ok(response) => Ok(HttpResponse::Ok().json(response)),
+        Err(e) => Ok(HttpResponse::InternalServerError().json(ApiResponse::<()>::error(e))),
+    }
+}
+
+// 获取分布式储存服务器详情 - 需要用户登录权限
+pub async fn get_user_storage_server(
+    _user: AuthenticatedUser,
+    db: web::Data<Database>,
+) -> Result<HttpResponse> {
+    let collection = db.collection::<StorageServer>("storage_servers");
+    let service = StorageService::new(collection);
+
+    match service.get_servers().await {
+        Ok(response) => {
+            let servers = response.data.unwrap_or_default();
+            if let Some(random_server) = servers.choose(&mut rand::thread_rng()) {
+                let server_id = random_server.id.unwrap_or_default().to_string();
+                Ok(HttpResponse::Ok().json(ApiResponse::success(server_id)))
+            } else {
+                Ok(HttpResponse::Ok().json(ApiResponse::<String>::error(
+                    "No servers available".to_string(),
+                )))
+            }
+        }
         Err(e) => Ok(HttpResponse::InternalServerError().json(ApiResponse::<()>::error(e))),
     }
 }
@@ -215,7 +242,7 @@ pub async fn get_upload_status(
 ) -> Result<HttpResponse> {
     let (server_id, upload_id) = path.into_inner();
     let collection = db.collection::<StorageServer>("storage_servers");
-    
+
     let service = StorageService::new(collection);
 
     match service.get_upload_status(&server_id, &upload_id).await {

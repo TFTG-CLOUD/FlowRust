@@ -1,0 +1,470 @@
+{% extends "base.html" %}
+
+{% block title %}图集投稿 - {{ SITENAME | default(value='影视天堂') }}{% endblock %}
+
+{% block meta_description %}图集投稿页面 - 上传您的图片作品{% endblock %}
+
+{% block meta_keywords %}图集投稿,图片上传,作品分享{% endblock %}
+
+{% block content %}
+<div class="min-h-screen bg-gray-900 py-8">
+  <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+    <!-- 页面头部 -->
+    <div class="text-center mb-8">
+      <h1 class="text-4xl font-bold text-white mb-4">图集投稿</h1>
+      <p class="text-gray-400 text-lg">上传您的图片作品，分享给更多人</p>
+    </div>
+
+    <!-- 投稿表单 -->
+    <div class="bg-gray-800 rounded-2xl p-8 shadow-xl">
+      <form id="imageSubmissionForm" class="space-y-6">
+        <!-- 基本信息 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-group">
+            <label for="imageTitle" class="block text-white font-medium mb-2">标题 *</label>
+            <input type="text" id="imageTitle" name="title" required
+              class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+              placeholder="请输入图集标题">
+          </div>
+
+          <div class="form-group">
+            <label for="imageEnTitle" class="block text-white font-medium mb-2">英文标题</label>
+            <input type="text" id="imageEnTitle" name="en_title"
+              class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+              placeholder="请输入英文标题（可选）">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="imageDescription" class="block text-white font-medium mb-2">描述</label>
+          <textarea id="imageDescription" name="description" rows="4"
+            class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent resize-vertical"
+            placeholder="请输入图集描述"></textarea>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-group">
+            <label for="imageCategory" class="block text-white font-medium mb-2">分类 *</label>
+            <select id="imageCategory" name="category" required
+              class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent">
+              <option value="">请选择分类</option>
+              <option value="动漫">动漫</option>
+              <option value="插画">插画</option>
+              <option value="写真">写真</option>
+              <option value="漫画">漫画</option>
+              <option value="其他">其他</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="imageLanguage" class="block text-white font-medium mb-2">语言</label>
+            <select id="imageLanguage" name="language"
+              class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent">
+              <option value="">请选择语言</option>
+              <option value="中文">中文</option>
+              <option value="英文">英文</option>
+              <option value="日文">日文</option>
+              <option value="其他">其他</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="form-group">
+            <label for="imageArtists" class="block text-white font-medium mb-2">作者/画师</label>
+            <input type="text" id="imageArtists" name="artists"
+              class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+              placeholder="请输入作者或画师名称">
+          </div>
+
+          <div class="form-group">
+            <label for="imageTags" class="block text-white font-medium mb-2">标签</label>
+            <input type="text" id="imageTags" name="tags"
+              class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+              placeholder="请输入标签，用逗号分隔">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="flex items-center text-white">
+            <input type="checkbox" id="imageNeedVip" name="need_vip" value="1" class="mr-3">
+            <span>需要VIP权限查看</span>
+          </label>
+        </div>
+
+        <!-- 文件上传 -->
+        <div class="form-group">
+          <label class="block text-white font-medium mb-2">压缩包文件 * (支持 .zip, .7z 格式)</label>
+          <div
+            class="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center hover:border-pink-500 transition-colors"
+            id="uploadArea">
+            <input type="file" id="archiveFile" accept=".zip,.7z" style="display: none;" required>
+            <div id="uploadPlaceholder">
+              <i class="fas fa-cloud-upload-alt text-6xl text-gray-400 mb-4"></i>
+              <p class="text-gray-400 text-lg mb-2">点击或拖拽文件到此处上传</p>
+              <p class="text-sm text-gray-500 mb-4">支持 ZIP 和 7Z 格式压缩包，最大 500MB</p>
+              <button type="button" onclick="document.getElementById('archiveFile').click()"
+                class="bg-pink-600 hover:bg-pink-700 text-white px-6 py-3 rounded-lg font-medium transition-colors">
+                选择文件
+              </button>
+            </div>
+            <div id="uploadProgress" style="display: none;">
+              <div class="mb-4">
+                <div class="flex justify-between text-sm text-gray-400 mb-2">
+                  <span id="uploadFileName" class="text-white"></span>
+                  <span id="uploadPercent" class="text-pink-500">0%</span>
+                </div>
+                <div class="w-full bg-gray-700 rounded-full h-3">
+                  <div id="uploadProgressBar" class="bg-pink-600 h-3 rounded-full transition-all duration-300"
+                    style="width: 0%"></div>
+                </div>
+              </div>
+              <p class="text-sm text-gray-500">正在上传，请稍候...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 提交按钮 -->
+        <div class="flex justify-center space-x-4">
+          <button type="button" onclick="resetForm()"
+            class="bg-gray-600 hover:bg-gray-700 text-white px-8 py-3 rounded-lg font-medium transition-colors">
+            重置
+          </button>
+          <button type="submit" id="submitBtn" disabled
+            class="bg-pink-600 hover:bg-pink-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-8 py-3 rounded-lg font-medium transition-colors">
+            提交投稿
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- 成功提示模态框 -->
+<div id="successModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+  style="display: none;">
+  <div class="bg-gray-800 rounded-2xl p-8 max-w-md mx-4 text-center">
+    <div class="w-16 h-16 bg-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+      <i class="fas fa-check text-white text-2xl"></i>
+    </div>
+    <h3 class="text-xl font-bold text-white mb-2">投稿成功</h3>
+    <p class="text-gray-400 mb-6">您的图集已成功提交，正在处理中...</p>
+    <button onclick="closeSuccessModal()"
+      class="bg-pink-600 hover:bg-pink-700 text-white px-6 py-3 rounded-lg font-medium transition-colors">
+      确定
+    </button>
+  </div>
+</div>
+
+<script>
+  let currentUploadId = null;
+  let currentServerId = null;
+
+  // 重置表单
+  function resetForm() {
+    document.getElementById('imageSubmissionForm').reset();
+    document.getElementById('submitBtn').disabled = true;
+    resetUploadUI();
+  }
+
+  // 重置上传UI
+  function resetUploadUI() {
+    document.getElementById('uploadPlaceholder').style.display = 'block';
+    document.getElementById('uploadProgress').style.display = 'none';
+    document.getElementById('uploadFileName').textContent = '';
+    document.getElementById('uploadPercent').textContent = '0%';
+    document.getElementById('uploadProgressBar').style.width = '0%';
+    currentUploadId = null;
+    currentServerId = null;
+  }
+
+  // 关闭成功模态框
+  function closeSuccessModal() {
+    document.getElementById('successModal').style.display = 'none';
+    window.location.href = '/user/profile';
+  }
+
+  // 显示通知
+  function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    const bgColor = {
+      success: 'bg-green-500',
+      error: 'bg-red-500',
+      warning: 'bg-yellow-500',
+      info: 'bg-blue-500'
+    }[type] || 'bg-blue-500';
+
+    notification.className = `fixed top-4 right-4 z-50 ${bgColor} text-white px-6 py-3 rounded-lg shadow-lg transform translate-x-full transition-transform duration-300`;
+    notification.textContent = message;
+
+    document.body.appendChild(notification);
+
+    // Slide in
+    setTimeout(() => {
+      notification.classList.remove('translate-x-full');
+    }, 100);
+
+    // Slide out and remove
+    setTimeout(() => {
+      notification.classList.add('translate-x-full');
+      setTimeout(() => {
+        if (notification.parentNode) {
+          notification.parentNode.removeChild(notification);
+        }
+      }, 300);
+    }, 3000);
+  }
+
+  // 文件选择处理
+  document.addEventListener('DOMContentLoaded', function () {
+    const archiveFile = document.getElementById('archiveFile');
+    const uploadArea = document.getElementById('uploadArea');
+    const imageSubmissionForm = document.getElementById('imageSubmissionForm');
+
+    if (archiveFile) {
+      archiveFile.addEventListener('change', handleFileSelect);
+    }
+
+    if (uploadArea) {
+      // 拖拽上传
+      uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('border-pink-500', 'bg-pink-500/10');
+      });
+
+      uploadArea.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('border-pink-500', 'bg-pink-500/10');
+      });
+
+      uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('border-pink-500', 'bg-pink-500/10');
+
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+          archiveFile.files = files;
+          handleFileSelect({ target: { files: files } });
+        }
+      });
+
+      uploadArea.addEventListener('click', () => {
+        archiveFile.click();
+      });
+    }
+
+    if (imageSubmissionForm) {
+      imageSubmissionForm.addEventListener('submit', handleImageSubmission);
+    }
+  });
+
+  // 处理文件选择
+  async function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // 验证文件类型
+    const allowedTypes = ['.zip', '.7z'];
+    const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+
+    if (!allowedTypes.includes(fileExtension)) {
+      showNotification('仅支持 ZIP 和 7Z 格式的压缩包文件', 'error');
+      return;
+    }
+
+    // 验证文件大小 (限制为500MB)
+    const maxSize = 500 * 1024 * 1024; // 500MB
+    if (file.size > maxSize) {
+      showNotification('文件大小不能超过 500MB', 'error');
+      return;
+    }
+
+    // 显示文件信息
+    document.getElementById('uploadFileName').textContent = file.name;
+    document.getElementById('uploadPlaceholder').style.display = 'none';
+    document.getElementById('uploadProgress').style.display = 'block';
+
+    // 禁用提交按钮，等待上传完成
+    document.getElementById('submitBtn').disabled = true;
+
+    // 开始上传
+    await uploadArchive(file);
+  }
+
+  // 上传压缩包文件
+  async function uploadArchive(file) {
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        showNotification('请先登录', 'error');
+        window.location.href = '/';
+        return;
+      }
+
+      // 1. 获取可用的存储服务器
+      const serversResponse = await fetch('/api/user/storage/servers', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!serversResponse.ok) {
+        throw new Error('获取存储服务器失败');
+      }
+
+      const serversData = await serversResponse.json();
+      if (!serversData.success || !serversData.data) {
+        throw new Error('没有可用的存储服务器');
+      }
+
+      const server = serversData.data[0]; // 使用第一个可用服务器
+      currentServerId = server.id;
+
+      // 2. 获取切片上传信息
+      const chunkResponse = await fetch(`/api/user/storage/upload/chunk/${server.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          filename: file.name,
+          filesize: file.size,
+          filetype: file.type || 'application/zip'
+        })
+      });
+
+      if (!chunkResponse.ok) {
+        throw new Error('获取上传信息失败');
+      }
+
+      const chunkData = await chunkResponse.json();
+      if (!chunkData.success) {
+        throw new Error(chunkData.message || '获取上传信息失败');
+      }
+
+      const uploadInfo = chunkData.data;
+      currentUploadId = uploadInfo.upload_id;
+
+      // 3. 执行切片上传
+      await performChunkedUpload(file, uploadInfo);
+
+      // 启用提交按钮
+      document.getElementById('submitBtn').disabled = false;
+
+      // 显示上传成功
+      document.getElementById('uploadPercent').textContent = '100%';
+      document.getElementById('uploadProgressBar').style.width = '100%';
+
+      showNotification('文件上传成功，请填写其他信息后提交', 'success');
+    } catch (error) {
+      console.error('上传失败:', error);
+      showNotification('上传失败: ' + error.message, 'error');
+      resetUploadUI();
+      document.getElementById('submitBtn').disabled = true;
+    }
+  }
+
+  // 执行切片上传
+  async function performChunkedUpload(file, uploadInfo) {
+    const CHUNK_SIZE = uploadInfo.chunk_size; // 使用服务器返回的chunk大小
+    const totalChunks = uploadInfo.total_chunks;
+    let uploadedChunks = 0;
+    const token = localStorage.getItem('auth_token');
+
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, file.size);
+      const chunk = file.slice(start, end);
+
+      const formData = new FormData();
+      formData.append('file', chunk);
+      formData.append('chunkIndex', i.toString());
+      formData.append('totalChunks', totalChunks.toString());
+      formData.append('uploadId', uploadInfo.upload_id);
+      formData.append('filename', file.name);
+
+      // 使用返回的upload_url进行上传
+      const response = await fetch(uploadInfo.upload_url, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error(`上传分片 ${i + 1}/${totalChunks} 失败`);
+      }
+
+      uploadedChunks++;
+      const progress = Math.round((uploadedChunks / totalChunks) * 100);
+
+      // 更新进度条
+      document.getElementById('uploadPercent').textContent = `${progress}%`;
+      document.getElementById('uploadProgressBar').style.width = `${progress}%`;
+    }
+
+    // // 4. 完成上传
+    // const completeResponse = await fetch(`/api/storage/${currentServerId}/complete-upload/${currentUploadId}`, {
+    //   method: 'POST',
+    //   headers: {
+    //     'Authorization': `Bearer ${token}`
+    //   }
+    // });
+
+    // if (!completeResponse.ok) {
+    //   throw new Error('完成上传失败');
+    // }
+
+    console.log('文件上传完成');
+  }
+
+  // 处理图集投稿表单提交
+  async function handleImageSubmission(event) {
+    event.preventDefault();
+
+    if (!currentUploadId || !currentServerId) {
+      showNotification('请先上传文件', 'error');
+      return;
+    }
+
+    const formData = new FormData(event.target);
+    const tags = formData.get('tags');
+    const tagsArray = tags ? tags.split(',').map(tag => tag.trim()).filter(tag => tag) : [];
+
+    const submissionData = {
+      title: formData.get('title'),
+      en_title: formData.get('en_title') || null,
+      description: formData.get('description') || null,
+      category: formData.get('category'),
+      language: formData.get('language') || null,
+      artists: formData.get('artists') || null,
+      tags: tagsArray,
+      need_vip: formData.get('need_vip') ? 1 : 0,
+      upload_id: currentUploadId,
+      server_id: currentServerId
+    };
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch('/api/user/images/submit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(submissionData)
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        document.getElementById('successModal').style.display = 'flex';
+      } else {
+        showNotification(result.message || '投稿失败，请重试', 'error');
+      }
+    } catch (error) {
+      console.error('提交失败:', error);
+      showNotification('网络错误，请稍后重试', 'error');
+    }
+  }
+</script>
+{% endblock %}

@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize, Deserializer};
-use std::fmt;
 use mongodb::bson::DateTime;
+use serde::{Deserialize, Deserializer, Serialize};
+use std::fmt;
 // use crate::models::{Vod, Art}; // Assuming you might want to reuse these
 
 // Custom enum to support both i64 and String for vod_id
@@ -18,7 +18,7 @@ impl VodId {
             VodId::String(s) => s.clone(),
         }
     }
-    
+
     pub fn to_i64(&self) -> Option<i64> {
         match self {
             VodId::Number(n) => Some(*n),
@@ -401,6 +401,8 @@ pub struct CardPageParams {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VipCheckRequest {
     pub video_id: String,
+    pub play_source: String,
+    pub play_index: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

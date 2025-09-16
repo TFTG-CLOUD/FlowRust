@@ -50,6 +50,9 @@
               <a href="/user/profile" class="dropdown-item">
                 <i class="fas fa-user"></i> 用户中心
               </a>
+              <a href="/user/submit-image" class="dropdown-item">
+                <i class="fas fa-images"></i> 图集投稿
+              </a>
               <a href="#" id="logoutBtn" class="dropdown-item">
                 <i class="fas fa-sign-out-alt"></i> 注销
               </a>
@@ -128,9 +131,14 @@
             <img id="mobileUserAvatar" src="/static/images/default-avatar.svg" alt="用户头像" class="mobile-user-avatar">
             <span id="mobileUserDisplayName" class="mobile-user-name">用户</span>
           </div>
-          <button id="mobileLogoutBtn" class="mobile-logout-btn">
-            <i class="fas fa-sign-out-alt"></i> 注销
-          </button>
+          <div class="flex items-center gap-2">
+            <a href="/user/submit-image" class="mobile-logout-btn bg-green-600 hover:bg-green-700 inline-flex items-center justify-center">
+              <i class="fas fa-images"></i> 图集投稿
+            </a>
+            <button id="mobileLogoutBtn" class="mobile-logout-btn">
+              <i class="fas fa-sign-out-alt"></i> 注销
+            </button>
+          </div>
         </div>
       </div>
     </div>

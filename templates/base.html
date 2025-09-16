@@ -1114,6 +1114,7 @@
     </div>
   </div>
 
+    
   <!-- 页脚 -->
   <footer class="bg-card-bg py-6 md:py-8 mt-8 md:mt-12">
     <div class="container mx-auto max-w-6xl px-4 md:px-6">
@@ -1722,6 +1723,22 @@
 
       showModal(modalId) {
         const modal = document.getElementById(modalId);
+        if (modal) {
+          modal.classList.add('show');
+          document.body.style.overflow = 'hidden';
+        }
+      }
+
+      closeModal(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+          modal.classList.remove('show');
+          document.body.style.overflow = 'auto';
+        }
+      }
+
+      showModal(modalId) {
+        const modal = document.getElementById(modalId);
         modal.classList.add('show');
         document.body.style.overflow = 'hidden';
       }
@@ -1742,6 +1759,9 @@
       }
     }
 
+    
+    
+    
     // Modal控制函数
     function closeModal(modalId) {
       const modal = document.getElementById(modalId);
